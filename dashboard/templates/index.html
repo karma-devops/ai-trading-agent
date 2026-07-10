@@ -244,7 +244,16 @@
                 <div id="tab-token" class="settings-tab-content">
                     <div class="setting-section">
                         <h3 class="section-title">Token Selection</h3>
-                        <p class="section-desc">Select tokens to monitor from Hyperliquid exchange</p>
+                        <p class="section-desc">Select tokens to monitor from Hyperliquid exchange, or add a custom symbol</p>
+
+                        <div class="setting-group custom-token-group">
+                            <label for="custom-token-input">Add Custom Token</label>
+                            <div class="custom-token-row">
+                                <input type="text" id="custom-token-input" class="setting-input" placeholder="e.g. PEPE, FARTCOIN" />
+                                <button class="btn-add-token" onclick="addCustomToken()">Add</button>
+                            </div>
+                            <span class="input-hint">Custom symbols must exist on HyperLiquid. Invalid symbols are marked after save.</span>
+                        </div>
 
                         <div class="token-categories">
                             <!-- Crypto Category -->

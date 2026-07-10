@@ -841,6 +841,31 @@ function removeToken(symbol) {
     }
 }
 
+// Add a custom token symbol from free-text input
+function addCustomToken() {
+    const input = document.getElementById('custom-token-input');
+    const raw = input.value.trim().toUpperCase();
+    if (!raw) return;
+
+    // Allow comma-separated or space-separated entries
+    const symbols = raw.split(/[,\s]+/).filter(s => s.length > 0);
+    let added = 0;
+    symbols.forEach(symbol => {
+        if (!selectedTokens.includes(symbol)) {
+            selectedTokens.push(symbol);
+            added++;
+        }
+    });
+
+    if (added > 0) {
+        updateTokenSelection();
+        showValidationMessage(`Added ${added} custom token(s)`, 'success');
+    } else {
+        showValidationMessage('Token(s) already selected', 'info');
+    }
+    input.value = '';
+}
+
 // Update token selection UI
 function updateTokenSelection() {
     // Update chips
