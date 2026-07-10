@@ -610,6 +610,33 @@ async function stopAgent() {
     }
 }
 
+// Emergency stop: halt agent and close all open positions
+async function emergencyStop() {
+    if (!confirm('🛑 EMERGENCY STOP\n\nThis will immediately halt the trading agent and close ALL open positions.\nContinue?')) {
+        return;
+    }
+    try {
+        addConsoleMessage('🛑 EMERGENCY STOP triggered - closing positions...', 'error');
+        const badge = document.getElementById('agent-badge');
+        badge.textContent = 'estop...';
+        badge.className = 'agent-badge stopping';
+
+        const response = await fetch('/api/estop', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ close_positions: true })
+        });
+        const data = await response.json();
+
+        addConsoleMessage(`🛑 E-stop: agent_stopped=${data.agent_stopped}, closed=[${(data.positions_closed || []).join(', ')}], failed=[${(data.positions_failed || []).join(', ')}]`, 'error');
+        updateAgentBadge(false, false);
+        updateDashboard();
+    } catch (error) {
+        addConsoleMessage(`Error during emergency stop: ${error.message}`, 'error');
+        updateDashboard();
+    }
+}
+
 // Set offline status
 function setStatusOffline() {
     document.getElementById('status').className = 'sublabel offline';

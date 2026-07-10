@@ -23,6 +23,25 @@ import subprocess
 from functools import wraps
 
 # ============================================================================
+# REMOTE AGENT API KEY WRAPPER
+# ============================================================================
+AGENT_API_KEY = os.getenv("AGENT_API_KEY", "").strip()
+
+def require_agent_api_key(f):
+    """Decorator for external agent API endpoints protected by AGENT_API_KEY."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not AGENT_API_KEY:
+            return jsonify({"status": "error", "message": "AGENT_API_KEY not configured"}), 503
+        provided = request.headers.get("X-Agent-API-Key", "")
+        if not provided:
+            provided = request.headers.get("Authorization", "").replace("Bearer ", "", 1)
+        if provided != AGENT_API_KEY:
+            return jsonify({"status": "error", "message": "Invalid or missing API key"}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+# ============================================================================
 # SETUP & CONFIGURATION
 # ============================================================================
 
@@ -1691,6 +1710,130 @@ def get_agent_status():
             "agent_running": False,
             "error": str(e)
         }), 500
+
+
+# ============================================================================
+# REMOTE AGENT API (external tools / cron / MCP)
+# Protected by AGENT_API_KEY in .env, independent of dashboard session auth.
+# ============================================================================
+
+@app.route('/api/agent/remote/status', methods=['GET'])
+@require_agent_api_key
+def remote_agent_status():
+    """Remote-friendly agent status."""
+    state = load_agent_state()
+    return jsonify({
+        "agent_running": agent_running,
+        "executing": agent_executing,
+        "stop_requested": stop_agent_flag,
+        "last_started": state.get("last_started"),
+        "last_stopped": state.get("last_stopped"),
+        "total_cycles": state.get("total_cycles", 0),
+        "exchange_connected": EXCHANGE_CONNECTED,
+        "timestamp": datetime.now().isoformat()
+    })
+
+
+@app.route('/api/agent/remote/start', methods=['POST'])
+@require_agent_api_key
+def remote_agent_start():
+    """Remote start of the trading agent. Mirrors /api/start logic."""
+    global agent_thread, agent_running, stop_agent_flag, agent_executing
+
+    with state_lock:
+        if agent_running:
+            return jsonify({"status": "already_running", "message": "Agent is already running"})
+        if agent_thread and agent_thread.is_alive():
+            return jsonify({"status": "still_stopping", "message": "Agent thread is still shutting down"})
+
+        stop_agent_flag = False
+        stop_event.clear()
+        agent_running = True
+
+        state = load_agent_state()
+        state["running"] = True
+        state["last_started"] = datetime.now().isoformat()
+        save_agent_state(state)
+
+    try:
+        agent_thread = threading.Thread(target=run_trading_agent, daemon=True)
+        agent_thread.start()
+    except Exception as e:
+        agent_running = False
+        return jsonify({"status": "error", "message": f"Failed to start agent: {e}"}), 500
+
+    add_console_log("Trading agent started via remote API", "success")
+    return jsonify({"status": "started", "message": "Trading agent started via remote API"})
+
+
+@app.route('/api/agent/remote/stop', methods=['POST'])
+@require_agent_api_key
+def remote_agent_stop():
+    """Remote stop of the trading agent. Mirrors /api/stop logic."""
+    global agent_running, stop_agent_flag
+
+    stopped = False
+    with state_lock:
+        if agent_running:
+            stop_agent_flag = True
+            agent_running = False
+            stop_event.set()
+
+            state = load_agent_state()
+            state["running"] = False
+            state["last_stopped"] = datetime.now().isoformat()
+            save_agent_state(state)
+            stopped = True
+
+    add_console_log("Trading agent stopped via remote API", "info")
+    return jsonify({"status": "stopped" if stopped else "not_running", "message": "Agent stop requested via remote API"})
+
+
+@app.route('/api/agent/remote/estop', methods=['POST'])
+@require_agent_api_key
+def remote_agent_estop():
+    """Remote emergency stop. Calls the dashboard estop endpoint logic."""
+    data = request.get_json(silent=True) or {}
+    close_positions = bool(data.get('close_positions', True))
+
+    # Build a synthetic request context for the dashboard estop
+    with app.test_request_context('/api/estop', method='POST', json={'close_positions': close_positions}):
+        # We must set session-like globals; the dashboard estop is login_required,
+        # so we bypass by calling the underlying function directly.
+        return emergency_stop()
+
+
+@app.route('/api/agent/remote/settings', methods=['GET', 'POST'])
+@require_agent_api_key
+def remote_agent_settings():
+    """Remote read or update user settings (persisted to .env)."""
+    if request.method == 'GET':
+        return jsonify({"success": True, "settings": load_settings()})
+
+    data = request.get_json(silent=True) or {}
+    if not data:
+        return jsonify({"success": False, "error": "No settings provided"}), 400
+
+    current = load_settings()
+    current.update(data)
+    is_valid, errors = validate_settings(current)
+    if not is_valid:
+        return jsonify({"success": False, "errors": errors}), 400
+
+    save_settings(current)
+    return jsonify({"success": True, "settings": current})
+
+
+@app.route('/api/agent/remote/trades', methods=['GET'])
+@require_agent_api_key
+def remote_agent_trades():
+    """Remote read recent trades from SQLite trade log."""
+    try:
+        from src.utils.trade_logger import get_recent_trades
+        limit = request.args.get('limit', 100, type=int)
+        return jsonify({"success": True, "trades": get_recent_trades(limit=limit)})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route('/api/estop', methods=['POST'])

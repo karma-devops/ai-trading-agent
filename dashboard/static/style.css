@@ -803,6 +803,17 @@ margin-left: -4px;
     color: var(--accent-red);
 }
 
+.icon-btn-estop {
+    color: var(--accent-red);
+    border-color: rgba(255, 71, 87, 0.35);
+}
+
+.icon-btn-estop:hover {
+    background: rgba(255, 71, 87, 0.2);
+    border-color: var(--accent-red);
+    color: #fff;
+}
+
 .icon-btn svg {
     display: block;
 }
