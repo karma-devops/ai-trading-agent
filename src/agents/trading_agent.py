@@ -2880,8 +2880,8 @@ Return ONLY valid JSON with the following structure:
             cprint("\n📈 Analyzing tokens for new entry opportunities...", "white", "on_blue")
 
             # Engine v6.1 path: generate signals directly, skip AI entry analysis
-            if self.active_strategy == 'engine_v6_1' and self.strategy_engine:
-                cprint("🚀 Engine v6.1 is active - generating technical entry signals", "magenta", attrs=["bold"])
+            if self.active_strategy in ('engine_v6_1', 'engine_v1', 'engine_v1_3') and self.strategy_engine:
+                cprint(f"🚀 {self.active_strategy} is active - generating technical entry signals", "magenta", attrs=["bold"])
                 engine_signals = self._compute_engine_signals(market_data)
                 for token, sig in engine_signals.items():
                     if sig["direction"] in ("BUY", "SELL"):
@@ -2894,14 +2894,14 @@ Return ONLY valid JSON with the following structure:
                                             "token": token,
                                             "action": sig["direction"],
                                             "confidence": int(sig["signal"] * 100),
-                                            "reasoning": f"Engine v6.1 | ADX={sig['metadata']['adx']} | fast={sig['metadata']['fast_ema']} medm={sig['metadata']['medm_ema']} slow={sig['metadata']['slow_sma']}",
+                                            "reasoning": f"{self.active_strategy} | ADX={sig['metadata']['adx']} | fast={sig['metadata']['fast_ema']} medm={sig['metadata']['medm_ema']} slow={sig['metadata']['slow_sma']}",
                                         }
                                     ]
                                 ),
                             ],
                             ignore_index=True,
                         )
-                        add_console_log(f"Engine v6.1 {token} -> {sig['direction']} | {int(sig['signal'] * 100)}%", "success")
+                        add_console_log(f"{self.active_strategy} {token} -> {sig['direction']} | {int(sig['signal'] * 100)}%", "success")
             else:
                 for token, data in market_data.items():
                     if self.should_stop():

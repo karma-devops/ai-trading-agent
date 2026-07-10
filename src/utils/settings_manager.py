@@ -104,7 +104,7 @@ DEFAULT_SETTINGS = {
     "ai_max_tokens": 2048,
 
     # Strategy settings
-    "active_strategy": "confidence_ai", # Selected strategy: confidence_ai or engine_v6_1
+    "active_strategy": "confidence_ai", # Selected strategy: confidence_ai | engine_v6_1 | engine_v1 | engine_v1_3
 
     # Swarm AI Model settings (for multi-agent mode) - MAX 6 MODELS
     "swarm_models": [
@@ -429,6 +429,8 @@ def get_available_strategies():
     return [
         {"id": "confidence_ai", "name": "AI Confidence (default)", "best_for": "All tokens"},
         {"id": "engine_v6_1", "name": "Engine v6.1", "best_for": "PEPE and FARTCOIN"},
+        {"id": "engine_v1", "name": "Eve Engine v1", "best_for": "PEPE 1h swing"},
+        {"id": "engine_v1_3", "name": "Eve Engine v1.3", "best_for": "PEPE 15m scalp (Scalp Aggressive 8/3)"},
     ]
 
 
@@ -501,6 +503,6 @@ def validate_settings(settings):
     # Validate active_strategy
     if "active_strategy" in settings:
         if not validate_active_strategy(settings["active_strategy"]):
-            errors.append("active_strategy must be 'confidence_ai' or 'engine_v6_1'")
+            errors.append("active_strategy must be one of 'confidence_ai', 'engine_v6_1', 'engine_v1', 'engine_v1_3'")
 
     return len(errors) == 0, errors
