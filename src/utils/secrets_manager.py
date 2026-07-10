@@ -99,13 +99,11 @@ AI_PROVIDERS = {
 
 # AI runtime settings stored in .env
 AI_ENV_VARS = {
-    "ai_provider": "AI_MODEL_TYPE",
+    "ai_provider": "AI_PROVIDER",
     "ai_model": "AI_MODEL",
     "ai_base_url": "AI_BASE_URL",
     "ai_api_key": "AI_API_KEY",
     "active_strategy": "ACTIVE_STRATEGY",
-    "ollama_base_url": "OLLAMA_BASE_URL",
-    "generic_openai_base_url": "GENERIC_OPENAI_BASE_URL",
 }
 
 # Default empty secrets
@@ -196,7 +194,7 @@ def save_ai_settings(
     """Persist AI provider and strategy settings to .env."""
     updates = {}
     if provider:
-        updates["AI_MODEL_TYPE"] = provider
+        updates["AI_PROVIDER"] = provider
     if model:
         updates["AI_MODEL"] = model
     if base_url:

@@ -124,22 +124,41 @@ DEFAULT_SETTINGS = {
 
 
 def load_settings():
-    """Load user settings from file, or return defaults if file doesn't exist"""
+    """Load user settings from file, or return defaults if file doesn't exist.
+    Falls back to environment variables for AI provider settings."""
     try:
         if SETTINGS_FILE.exists():
             with open(SETTINGS_FILE, 'r') as f:
                 settings = json.load(f)
-                # Merge with defaults to ensure all keys exist
                 merged = DEFAULT_SETTINGS.copy()
                 merged.update(settings)
+                # Fall back to env vars for AI settings if not in JSON
+                if not merged.get('ai_provider') or merged['ai_provider'] == 'ollama':
+                    merged['ai_provider'] = os.getenv('AI_PROVIDER', merged.get('ai_provider', 'ollama'))
+                if not merged.get('ai_model') or merged['ai_model'] == 'kimi-k2.7-code':
+                    merged['ai_model'] = os.getenv('AI_MODEL', merged.get('ai_model', 'kimi-k2.7-code'))
+                if not merged.get('ai_base_url'):
+                    merged['ai_base_url'] = os.getenv('AI_BASE_URL', '')
+                if not merged.get('ai_api_key'):
+                    merged['ai_api_key'] = os.getenv('AI_API_KEY', '')
                 return merged
         else:
-            # Create default settings file
-            save_settings(DEFAULT_SETTINGS)
-            return DEFAULT_SETTINGS.copy()
+            # No settings file — use env vars with defaults
+            settings = DEFAULT_SETTINGS.copy()
+            settings['ai_provider'] = os.getenv('AI_PROVIDER', 'ollama')
+            settings['ai_model'] = os.getenv('AI_MODEL', 'kimi-k2.7-code')
+            settings['ai_base_url'] = os.getenv('AI_BASE_URL', '')
+            settings['ai_api_key'] = os.getenv('AI_API_KEY', '')
+            save_settings(settings)
+            return settings
     except Exception as e:
         print(f"⚠️ Error loading settings: {e}")
-        return DEFAULT_SETTINGS.copy()
+        settings = DEFAULT_SETTINGS.copy()
+        settings['ai_provider'] = os.getenv('AI_PROVIDER', 'ollama')
+        settings['ai_model'] = os.getenv('AI_MODEL', 'kimi-k2.7-code')
+        settings['ai_base_url'] = os.getenv('AI_BASE_URL', '')
+        settings['ai_api_key'] = os.getenv('AI_API_KEY', '')
+        return settings
 
 
 def save_settings(settings):

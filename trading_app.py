@@ -1064,6 +1064,17 @@ def run_trading_agent():
     add_console_log(f"AI Model: {user_settings.get('ai_provider')}/{user_settings.get('ai_model')}", "info")
     add_console_log(f"Strategy: {user_settings.get('active_strategy', 'confidence_ai')}", "info")
     add_console_log(f"Starting Balance: ${user_settings.get('starting_balance', 10.0)} USDC", "info")
+    add_console_log(f"DRY_RUN: {os.getenv('DRY_RUN', 'true')}", "info")
+
+    # Debug: show AI connection details (masked)
+    ai_url = user_settings.get('ai_base_url', '')
+    ai_key = user_settings.get('ai_api_key', '')
+    if ai_url:
+        add_console_log(f"AI Endpoint: {ai_url}", "info")
+    if ai_key:
+        add_console_log(f"AI Key: {ai_key[:8]}...{ai_key[-4:]}", "info")
+    else:
+        add_console_log("⚠️ No AI API key set — check Settings or env vars", "warning")
 
     # Log swarm models if in swarm mode
     if swarm_mode == 'swarm':
@@ -1077,7 +1088,6 @@ def run_trading_agent():
 
     add_console_log("Loaded trading_agent", "info")
     add_console_log(f"Using exchange {EXCHANGE}", "info")
-    add_console_log(f"DRY_RUN: {os.getenv('DRY_RUN', 'true')}", "info")
 
     # Convert minutes to seconds for sleep (use user setting)
     sleep_seconds = user_settings.get('sleep_minutes', 30) * 60
