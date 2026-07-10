@@ -161,11 +161,22 @@ class ModelFactory:
                 # Log missing API keys at debug level (not error - keys are optional)
                 pass  # User may not have all providers configured
 
-        # Initialize Ollama (no API key needed - runs locally)
+        # Initialize Ollama (uses AI_BASE_URL and AI_API_KEY from env if available)
         try:
             if "ollama" in self.MODEL_IMPLEMENTATIONS:
                 model_class = self.MODEL_IMPLEMENTATIONS["ollama"]
-                model_instance = model_class(model_name=self.DEFAULT_MODELS["ollama"])
+                # Use env vars for initial load (matches operator's config)
+                init_model = os.getenv("AI_MODEL", self.DEFAULT_MODELS["ollama"])
+                init_kwargs = {"model_name": init_model}
+                ai_url = os.getenv("AI_BASE_URL", "")
+                if ai_url:
+                    init_kwargs["base_url"] = ai_url
+                else:
+                    init_kwargs["base_url"] = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/api")
+                ai_key = os.getenv("AI_API_KEY", "")
+                if ai_key:
+                    init_kwargs["api_key"] = ai_key
+                model_instance = model_class(**init_kwargs)
 
                 if model_instance.is_available():
                     self._models["ollama"] = model_instance
@@ -285,7 +296,18 @@ class ModelFactory:
                     if base_url:
                         kwargs["base_url"] = base_url
                     elif model_type == "ollama":
-                        kwargs["base_url"] = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/api")
+                        ai_url = os.getenv("AI_BASE_URL", "")
+                        if ai_url:
+                            kwargs["base_url"] = ai_url
+                        else:
+                            kwargs["base_url"] = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/api")
+                    # Pass api_key for OpenAI-compatible mode
+                    if api_key:
+                        kwargs["api_key"] = api_key
+                    elif model_type == "ollama":
+                        ai_key = os.getenv("AI_API_KEY", "")
+                        if ai_key:
+                            kwargs["api_key"] = ai_key
                     model = self.MODEL_IMPLEMENTATIONS[model_type](**kwargs)
                 elif model_type == "generic_openai":
                     api_key = os.getenv("GENERIC_OPENAI_API_KEY") or os.getenv("OPENROUTER_API_KEY")
