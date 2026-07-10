@@ -1,8 +1,28 @@
-# Use the specific Python version used during development [1]
+# ============================================================================
+# AI Trading Agent - HyperLiquid (Private)
+# Dockerfile for EasyPanel / zip upload / standalone Docker builds
+# ============================================================================
+#
+# HOW TO USE THIS FILE
+# ---------------------
+# Option A - EasyPanel zip upload:
+#   1. Download the repo as a ZIP.
+#   2. In EasyPanel, create a new project from "Upload" or "Dockerfile".
+#   3. Upload the ZIP.
+#   4. Set the environment variables listed in .env_example.
+#   5. Expose port 5000.
+#
+# Option B - Manual docker build:
+#   docker build -t ai-trading-agent-hl .
+#   docker run -p 5000:5000 --env-file .env ai-trading-agent-hl
+#
+# Option C - docker-compose:
+#   docker compose up -d
+# ============================================================================
+
 FROM python:3.10-slim
 
-# Install system dependencies
-# Fixed: Comments moved outside the RUN command to prevent syntax errors
+# Install system dependencies needed to compile Python packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
@@ -13,23 +33,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Optimization: Keep python quiet and unbuffered for real-time dashboard logs
+# Do not write .pyc files; flush stdout/stderr immediately for logs
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Optimization: Install dependencies with no cache to save disk space
+# Install Python dependencies first so Docker layer caching works
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the full repository
+# Copy the rest of the application
 COPY . .
 
-# Critical: Create the exact directory the code expects for persistent data [2, 3]
-# Also create temp_data for agent analysis cycles [4]
-RUN mkdir -p /app/src/data /app/temp_data
+# Ensure directories expected by the code exist at runtime
+RUN mkdir -p /app/src/data /app/temp_data /app/logs
 
-# Expose the dashboard port (default 5000) [5, 6]
+# The dashboard listens on this port by default
 EXPOSE 5000
 
-# Start the dashboard backend
+# Use Gunicorn for production (configured in start.sh)
 CMD ["./start.sh"]
