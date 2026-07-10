@@ -470,7 +470,9 @@ def get_current_price(symbol):
 
 def get_account_value(address):
     """
-    Get total account value (equity) for an address
+    Get total account value (equity) for an address.
+    Checks perps account first, then falls back to spot balance if perps is empty
+    (handles Manual account type where USDC sits in spot wallet).
     Args:
         address (str or Account): HyperLiquid wallet address or Account object
     Returns:
@@ -481,14 +483,31 @@ def get_account_value(address):
         
         # Handle both string addresses and Account objects
         if hasattr(address, 'address'):
-            # It's an Account object, extract the address
             address_str = address.address
         else:
-            # It's already a string
             address_str = address
         
         user_state = info.user_state(address_str)
         account_value = float(user_state["marginSummary"]["accountValue"])
+        
+        # If perps account is empty, check spot balance (Manual mode)
+        if account_value == 0.0:
+            try:
+                import requests as _requests
+                spot_url = 'https://api.hyperliquid.xyz/info'
+                spot_data = {'type': 'spotClearinghouseState', 'user': address_str.lower()}
+                spot_resp = _requests.post(spot_url, headers={'Content-Type': 'application/json'}, json=spot_data)
+                if spot_resp.status_code == 200:
+                    spot_state = spot_resp.json()
+                    for balance in spot_state.get('balances', []):
+                        if balance.get('coin') == 'USDC':
+                            spot_usdc = float(balance.get('total', '0'))
+                            if spot_usdc > 0:
+                                print(f'💡 Perps account empty, found {spot_usdc} USDC in spot wallet (Manual mode)')
+                                account_value = spot_usdc
+                                break
+            except Exception as spot_err:
+                print(f'⚠️ Could not check spot balance: {spot_err}')
         
         print(f'💎 Total equity for {address_str[:6]}...{address_str[-4:]}: ${account_value:,.2f}')
         return account_value
@@ -681,9 +700,10 @@ def get_balance(address):
       
 def get_available_balance(address):
     """
-    Get available (withdrawable) USDC balance for an address
+    Get available (withdrawable) USDC balance for an address.
+    Checks perps account first, then falls back to spot balance if perps is empty.
     Args:
-        address (str): HyperLiquid wallet address (e.g., from ACCOUNT_ADDRESS env var)
+        address (str): HyperLiquid wallet address
     Returns:
         float: Available balance in USD
     """
@@ -693,6 +713,23 @@ def get_available_balance(address):
         
         # Get withdrawable balance (free balance not used in positions)
         balance = float(user_state["withdrawable"])
+        
+        # If perps balance is empty, check spot (Manual mode)
+        if balance == 0.0:
+            try:
+                import requests as _requests
+                spot_data = {'type': 'spotClearinghouseState', 'user': address.lower()}
+                spot_resp = _requests.post('https://api.hyperliquid.xyz/info',
+                                          headers={'Content-Type': 'application/json'}, json=spot_data)
+                if spot_resp.status_code == 200:
+                    for bal in spot_resp.json().get('balances', []):
+                        if bal.get('coin') == 'USDC':
+                            spot_usdc = float(bal.get('total', '0'))
+                            if spot_usdc > 0:
+                                balance = spot_usdc
+                                break
+            except Exception:
+                pass
         
         print(f'💰 Available balance for {address[:6]}...{address[-4:]}: ${balance:,.2f}')
         return balance
