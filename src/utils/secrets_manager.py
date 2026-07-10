@@ -82,7 +82,30 @@ AI_PROVIDERS = {
         "env_var": "OPENROUTER_API_KEY",
         "placeholder": "sk-or-...",
         "docs_url": "https://openrouter.ai/keys"
+    },
+    "ollama": {
+        "name": "Ollama Cloud",
+        "env_var": "OLLAMA_API_KEY",
+        "placeholder": "Optional for local, required for some cloud endpoints",
+        "docs_url": "https://ollama.com"
+    },
+    "generic_openai": {
+        "name": "Generic OpenAI-compatible",
+        "env_var": "GENERIC_OPENAI_API_KEY",
+        "placeholder": "Any OpenAI-compatible key",
+        "docs_url": ""
     }
+}
+
+# AI runtime settings stored in .env
+AI_ENV_VARS = {
+    "ai_provider": "AI_MODEL_TYPE",
+    "ai_model": "AI_MODEL",
+    "ai_base_url": "AI_BASE_URL",
+    "ai_api_key": "AI_API_KEY",
+    "active_strategy": "ACTIVE_STRATEGY",
+    "ollama_base_url": "OLLAMA_BASE_URL",
+    "generic_openai_base_url": "GENERIC_OPENAI_BASE_URL",
 }
 
 # Default empty secrets
@@ -90,6 +113,132 @@ DEFAULT_SECRETS = {
     "api_keys": {},
     "last_updated": None
 }
+
+
+def _env_path() -> Path:
+    """Return the project root .env path."""
+    return Path(__file__).parent.parent.parent / ".env"
+
+
+def load_env_file() -> Dict[str, str]:
+    """Load key/value pairs from .env file."""
+    env = {}
+    env_path = _env_path()
+    if not env_path.exists():
+        return env
+    try:
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                env[key] = value
+    except Exception as e:
+        print(f"⚠️ Could not load .env: {e}")
+    return env
+
+
+def save_env_file(updates: Dict[str, str]) -> Tuple[bool, Optional[str]]:
+    """
+    Update the .env file with key/value pairs.
+    Existing keys are updated; new keys are appended.
+    """
+    env_path = _env_path()
+    try:
+        env = load_env_file()
+        env.update(updates)
+
+        lines = []
+        if env_path.exists():
+            with open(env_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+
+        seen = set()
+        new_lines = []
+        for raw in lines:
+            line = raw.rstrip("\n")
+            if not line or line.startswith("#") or "=" not in line:
+                new_lines.append(line)
+                continue
+            key, _, _ = line.partition("=")
+            key = key.strip()
+            if key in updates:
+                value = env[key]
+                new_lines.append(f"{key}={value}")
+                seen.add(key)
+            else:
+                new_lines.append(line)
+
+        for key, value in updates.items():
+            if key not in seen:
+                new_lines.append(f"{key}={value}")
+
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(new_lines) + "\n")
+
+        # Also update in-memory env
+        for key, value in updates.items():
+            os.environ[key] = value
+
+        return True, None
+    except Exception as e:
+        return False, f"Failed to update .env: {str(e)}"
+
+
+def save_ai_settings(
+    provider: str = "",
+    model: str = "",
+    base_url: str = "",
+    api_key: str = "",
+    active_strategy: str = "",
+) -> Tuple[bool, Optional[str]]:
+    """Persist AI provider and strategy settings to .env."""
+    updates = {}
+    if provider:
+        updates["AI_MODEL_TYPE"] = provider
+    if model:
+        updates["AI_MODEL"] = model
+    if base_url:
+        updates["AI_BASE_URL"] = base_url
+        if provider == "ollama":
+            updates["OLLAMA_BASE_URL"] = base_url
+        elif provider == "generic_openai":
+            updates["GENERIC_OPENAI_BASE_URL"] = base_url
+    if api_key:
+        if provider == "ollama":
+            updates["OLLAMA_API_KEY"] = api_key
+            env_var = "OLLAMA_API_KEY"
+        elif provider == "generic_openai":
+            updates["GENERIC_OPENAI_API_KEY"] = api_key
+            env_var = "GENERIC_OPENAI_API_KEY"
+        elif provider in AI_PROVIDERS:
+            env_var = AI_PROVIDERS[provider]["env_var"]
+            updates[env_var] = api_key
+        else:
+            env_var = None
+        # Keep backward-compatible secrets JSON
+        if env_var:
+            set_api_key_env_only(provider, api_key)
+    if active_strategy:
+        updates["ACTIVE_STRATEGY"] = active_strategy
+    if not updates:
+        return True, None
+    return save_env_file(updates)
+
+
+def set_api_key_env_only(provider: str, api_key: str) -> Tuple[bool, Optional[str]]:
+    """Store API key in secrets JSON only (legacy path used by save_ai_settings)."""
+    if provider not in AI_PROVIDERS:
+        return False, f"Unknown provider: {provider}"
+    secrets = load_secrets()
+    if "api_keys" not in secrets:
+        secrets["api_keys"] = {}
+    if api_key and api_key.strip():
+        secrets["api_keys"][provider] = api_key.strip()
+    elif provider in secrets["api_keys"]:
+        del secrets["api_keys"][provider]
+    return save_secrets(secrets)
 
 
 def load_secrets() -> Dict:

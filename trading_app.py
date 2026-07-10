@@ -1727,6 +1727,19 @@ def settings():
 
             # Save settings
             if save_settings(data):
+                # Persist AI provider/model/base_url/key + strategy to .env
+                try:
+                    from src.utils.secrets_manager import save_ai_settings
+                    save_ai_settings(
+                        provider=data.get('ai_provider', ''),
+                        model=data.get('ai_model', ''),
+                        base_url=data.get('ai_base_url', ''),
+                        api_key=data.get('ai_api_key', ''),
+                        active_strategy=data.get('active_strategy', ''),
+                    )
+                except Exception as e:
+                    print(f"⚠️ Could not persist AI settings to .env: {e}")
+
                 # Build detailed log message
                 log_parts = [
                     f"Timeframe={data.get('timeframe')}",
@@ -1737,6 +1750,10 @@ def settings():
                 # Add AI model info if present
                 if 'ai_provider' in data and 'ai_model' in data:
                     log_parts.append(f"AI={data.get('ai_provider')}/{data.get('ai_model')}")
+
+                # Add strategy info if present
+                if 'active_strategy' in data:
+                    log_parts.append(f"Strategy={data.get('active_strategy')}")
 
                 add_console_log(f"Settings updated: {', '.join(log_parts)}", "info")
 

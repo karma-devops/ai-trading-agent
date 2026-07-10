@@ -260,19 +260,26 @@ def get_available_models_for_provider(provider):
         # - TODO: Set up dedicated Ollama server for more reliable free inference
         # - For now, recommend using Gemini (free tier) or DeepSeek API as alternatives
         'ollama': {
-            # DeepSeek V3.2 - BEST for Trading (Local)
+            # Ollama cloud / local compatible models
+            'kimi-k2.7-code': 'Kimi K2.7 Code ⚡ Default',
             'deepseek-v3.2': 'DeepSeek V3.2 ⚡ BEST',
             'deepseek-v3.2:671b-q4_K_M': 'DeepSeek V3.2 Q4 - Memory efficient',
-            # DeepSeek V3.1 - Stable for Trading (Local)
-            'deepseek-v3.1:671b': 'DeepSeek V3.1 671B ⚡ Recommended',
+            'deepseek-v3.1:671b': 'DeepSeek V3.1 671B',
             'deepseek-v3.1:671b-q4_K_M': 'DeepSeek V3.1 Q4 - Efficient',
-            # Other models (Local)
             'deepseek-r1': 'DeepSeek R1 - Reasoning',
             'deepseek-coder': 'DeepSeek Coder - STEM/code',
             'llama3.2': 'LLaMA 3.2 - Balanced',
             'llama3.3:70b': 'LLaMA 3.3 70B - Large',
             'qwen3:8b': 'Qwen3 8B - Fast',
             'mistral': 'Mistral - General',
+        },
+        'generic_openai': {
+            # Any OpenAI-compatible endpoint
+            'kimi-k2.7-code': 'Kimi K2.7 Code ⚡ Default',
+            'deepseek/deepseek-v4-0324:free': 'DeepSeek V4 Flash',
+            'deepseek-v3.2': 'DeepSeek V3.2',
+            'llama3.3:70b': 'LLaMA 3.3 70B',
+            'qwen3:8b': 'Qwen3 8B',
         },
         # NOTE: OllamaFreeAPI has known reliability issues
         # TODO: Set up dedicated server for more reliable free model access
@@ -335,7 +342,7 @@ def get_available_models_for_provider(provider):
 
 def validate_ai_provider(provider):
     """Validate AI provider"""
-    valid_providers = ['openrouter', 'anthropic', 'openai', 'gemini', 'deepseek', 'xai', 'mistral', 'cohere', 'perplexity', 'groq', 'ollama', 'ollamafreeapi']
+    valid_providers = ['openrouter', 'anthropic', 'openai', 'gemini', 'deepseek', 'xai', 'mistral', 'cohere', 'perplexity', 'groq', 'ollama', 'ollamafreeapi', 'generic_openai']
     return provider in valid_providers
 
 
@@ -453,6 +460,12 @@ def validate_settings(settings):
     # Validate AI provider
     if "ai_provider" in settings and not validate_ai_provider(settings["ai_provider"]):
         errors.append(f"Invalid AI provider: {settings['ai_provider']}")
+
+    # Validate AI base_url if provided (must be http/https or empty)
+    if "ai_base_url" in settings and settings["ai_base_url"]:
+        url = settings["ai_base_url"].strip()
+        if not (url.startswith("http://") or url.startswith("https://")):
+            errors.append("ai_base_url must be a valid http:// or https:// URL")
 
     # Validate AI temperature
     if "ai_temperature" in settings and not validate_ai_temperature(settings["ai_temperature"]):
