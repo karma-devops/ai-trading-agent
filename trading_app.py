@@ -1023,10 +1023,14 @@ def run_trading_agent():
                 # Pass user-selected tokens to the agent
                 symbols=monitored_tokens,
                 # Pass AI settings
-                ai_provider=user_settings.get('ai_provider', 'openrouter'),
-                ai_model=user_settings.get('ai_model', 'x-ai/grok-4.1-fast'),
+                ai_provider=user_settings.get('ai_provider', 'ollama'),
+                ai_model=user_settings.get('ai_model', 'kimi-k2.7-code'),
                 ai_temperature=user_settings.get('ai_temperature', 0.6),
-                ai_max_tokens=user_settings.get('ai_max_tokens', 8024),
+                ai_max_tokens=user_settings.get('ai_max_tokens', 2048),
+                ai_base_url=user_settings.get('ai_base_url', ''),
+                ai_api_key=user_settings.get('ai_api_key', ''),
+                # Pass strategy selection
+                active_strategy=user_settings.get('active_strategy', 'confidence_ai'),
                 # Pass swarm mode settings
                 swarm_mode=user_settings.get('swarm_mode', 'single'),
                 swarm_models=user_settings.get('swarm_models', [])

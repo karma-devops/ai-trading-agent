@@ -210,11 +210,13 @@ class ModelFactory:
         else:
             cprint(f"\n✨ Ready to use: {', '.join(self._models.keys())}", "green")
     
-    def get_model(self, model_type: str, model_name: Optional[str] = None, base_url: Optional[str] = None) -> Optional[BaseModel]:
+    def get_model(self, model_type: str, model_name: Optional[str] = None,
+                  base_url: Optional[str] = None, api_key: Optional[str] = None) -> Optional[BaseModel]:
         """Get a specific model instance
 
         Supports on-demand initialization and BYOK. Pass base_url for Ollama
-        cloud or generic OpenAI-compatible endpoints.
+        cloud or generic OpenAI-compatible endpoints, and api_key for any
+        provider when you want to override the environment variable.
         """
         if model_type not in self.MODEL_IMPLEMENTATIONS:
             cprint(f"⚠️ Unknown model type: {model_type}", "yellow")
@@ -231,17 +233,19 @@ class ModelFactory:
                         init_kwargs["base_url"] = base_url
                     elif model_type == "ollama":
                         init_kwargs["base_url"] = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/api")
+                    if api_key:
+                        init_kwargs["api_key"] = api_key
                     model_instance = model_class(**init_kwargs)
                     if model_instance.is_available():
                         self._models[model_type] = model_instance
                         cprint(f"✅ {model_instance.model_name} initialized on-demand", "green")
                 elif model_type == "generic_openai":
-                    api_key = os.getenv("GENERIC_OPENAI_API_KEY") or os.getenv("OPENROUTER_API_KEY")
-                    if api_key:
+                    key = api_key or os.getenv("GENERIC_OPENAI_API_KEY") or os.getenv("OPENROUTER_API_KEY")
+                    if key:
                         model_class = self.MODEL_IMPLEMENTATIONS[model_type]
                         default_model = model_name or self.DEFAULT_MODELS.get(model_type)
                         default_base = base_url or os.getenv("GENERIC_OPENAI_BASE_URL", "")
-                        model_instance = model_class(api_key=api_key, model_name=default_model, base_url=default_base)
+                        model_instance = model_class(api_key=key, model_name=default_model, base_url=default_base)
                         if model_instance.is_available():
                             self._models[model_type] = model_instance
                             cprint(f"✅ {model_instance.model_name} initialized on-demand", "green")

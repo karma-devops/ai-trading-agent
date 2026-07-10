@@ -574,6 +574,7 @@ class TradingAgent:
     def __init__(self, timeframe=None, days_back=None, stop_check_callback=None,
                  symbols=None, ai_provider=None, ai_model=None,
                  ai_temperature=None, ai_max_tokens=None,
+                 ai_base_url=None, ai_api_key=None,
                  swarm_mode=None, swarm_models=None, active_strategy=None):
         """
         Initialize Trading Agent with configurable settings
@@ -590,7 +591,15 @@ class TradingAgent:
             swarm_mode (str): 'single' or 'swarm'. Defaults to 'single'.
             swarm_models (list): List of swarm model configs for multi-agent consensus.
             active_strategy (str): 'confidence_ai' (default) or 'engine_v6_1'.
+            ai_base_url (str): Optional endpoint URL for Ollama/generic_openai.
+            ai_api_key (str): Optional API key for Ollama/generic_openai.
         """
+        # Store symbols to analyze (use passed values or fall back to config)
+        if symbols is not None:
+            self.symbols = symbols
+        else:
+            self.symbols = SYMBOLS
+
         # Store configurable settings as instance variables
         self.timeframe = timeframe if timeframe is not None else DATA_TIMEFRAME
         self.days_back = days_back if days_back is not None else DAYSBACK_4_DATA
@@ -601,6 +610,8 @@ class TradingAgent:
         self.ai_model_name = ai_model if ai_model is not None else AI_MODEL_NAME
         self.ai_temperature = ai_temperature if ai_temperature is not None else AI_TEMPERATURE
         self.ai_max_tokens = ai_max_tokens if ai_max_tokens is not None else AI_MAX_TOKENS
+        self.ai_base_url = ai_base_url if ai_base_url is not None else getattr(sys.modules.get('src.config', None), 'AI_BASE_URL', '')
+        self.ai_api_key = ai_api_key if ai_api_key is not None else getattr(sys.modules.get('src.config', None), 'AI_API_KEY', '')
 
         # Strategy selection
         self.active_strategy = active_strategy if active_strategy is not None else getattr(sys.modules.get('src.config', None), 'ACTIVE_STRATEGY', 'confidence_ai')
@@ -616,14 +627,6 @@ class TradingAgent:
         # Store swarm mode settings (use passed values or fall back to defaults)
         self.use_swarm_mode = (swarm_mode == 'swarm') if swarm_mode is not None else DEFAULT_SWARM_MODE
         self.swarm_models_config = swarm_models or []
-
-        # Store symbols to analyze (use passed values or fall back to config)
-        if symbols is not None:
-            self.symbols = symbols
-        elif EXCHANGE in ["ASTER", "HYPERLIQUID"]:
-            self.symbols = SYMBOLS
-        else:
-            self.symbols = MONITORED_TOKENS
 
         self.account = None
         if EXCHANGE == "HYPERLIQUID":
@@ -668,12 +671,18 @@ class TradingAgent:
                 cprint("✅ Swarm mode initialized with default AI models!", "green")
 
             cprint("💼 Initializing fast model for portfolio calculations...", "cyan")
-            self.model = model_factory.get_model(self.ai_provider, self.ai_model_name)
+            self.model = model_factory.get_model(
+                self.ai_provider, self.ai_model_name,
+                base_url=self.ai_base_url, api_key=self.ai_api_key
+            )
             if self.model:
                 cprint(f"✅ Allocation model ready: {self.model.model_name}", "green")
         else:
             cprint(f"\n⚙️ Initializing Trading Agent with {self.ai_provider} model...", "cyan")
-            self.model = model_factory.get_model(self.ai_provider, self.ai_model_name)
+            self.model = model_factory.get_model(
+                self.ai_provider, self.ai_model_name,
+                base_url=self.ai_base_url, api_key=self.ai_api_key
+            )
             self.swarm = None
 
             if not self.model:
