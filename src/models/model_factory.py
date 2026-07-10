@@ -256,10 +256,15 @@ class ModelFactory:
                         ai_key = os.getenv("AI_API_KEY", "")
                         if ai_key:
                             init_kwargs["api_key"] = ai_key
+                    cprint(f"   📞 Initializing {model_type} with model={default_model}, base_url={init_kwargs.get('base_url', 'default')}", "cyan")
                     model_instance = model_class(**init_kwargs)
                     if model_instance.is_available():
                         self._models[model_type] = model_instance
                         cprint(f"✅ {model_instance.model_name} initialized on-demand", "green")
+                    else:
+                        cprint(f"⚠️ {model_type} model not available (is_available=False)", "yellow")
+                        if hasattr(model_instance, '_connection_error'):
+                            cprint(f"   Error: {model_instance._connection_error}", "yellow")
                 elif model_type == "generic_openai":
                     key = api_key or os.getenv("GENERIC_OPENAI_API_KEY") or os.getenv("OPENROUTER_API_KEY")
                     if key:

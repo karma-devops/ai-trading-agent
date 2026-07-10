@@ -6,13 +6,19 @@ DUAL-MODE AI TRADING SYSTEM:
 SINGLE MODEL MODE (Fast - ~10 seconds per token):
    - Uses one AI model for quick trading decisions
    - Best for: Fast execution, high-frequency strategies
-   - Configure model in config.py: AI_MODEL_TYPE and AI_MODEL_NAME
+   - Configure model via env vars: AI_PROVIDER, AI_MODEL, AI_BASE_URL, AI_API_KEY
+   - Or set in dashboard Settings
 
 SWARM MODE (Consensus - ~45-60 seconds per token):
    - Queries 6 AI models simultaneously for consensus voting
    - Models vote: "Buy", "Sell", or "Do Nothing"
    - Majority decision wins with confidence percentage
    - Best for: Higher confidence trades, 15-minute+ timeframes
+
+ENGINE STRATEGY MODE (Technical - no AI required):
+   - Uses Eve Engine technical indicators (EMA, ADX, ATR)
+   - AI confirmation optional for high-confidence signals (>90%)
+   - Strategies: engine_v1, engine_v1_3, engine_v6_1
 """
 
 import os
@@ -803,10 +809,14 @@ class TradingAgent:
                     cprint(f"❌ Failed to initialize {self.ai_provider} model!", "red")
                     try:
                         add_console_log(f"❌ Failed to initialize AI model: {self.ai_provider}", "error")
+                        add_console_log(f"   Provider: {self.ai_provider}", "error")
+                        add_console_log(f"   Model: {self.ai_model_name}", "error")
+                        add_console_log(f"   Base URL: {self.ai_base_url or '(not set)'}", "error")
+                        add_console_log(f"   API Key: {'set' if self.ai_api_key else 'NOT SET'}", "error")
                         add_console_log("Check AI_PROVIDER, AI_MODEL, AI_BASE_URL, AI_API_KEY in settings", "warning")
                     except Exception:
                         pass
-                    raise RuntimeError(f"Failed to initialize {self.ai_provider} model")
+                    raise RuntimeError(f"Failed to initialize {self.ai_provider} model — check settings")
             else:
                 cprint(f"✅ Using model: {self.model.model_name}", "green")
                 try:
