@@ -774,10 +774,16 @@ class TradingAgent:
                 cprint(f"✅ Allocation model ready: {self.model.model_name}", "green")
         else:
             cprint(f"\n⚙️ Initializing Trading Agent with {self.ai_provider} model...", "cyan")
+
+            # For engine strategies, AI model is optional — signals come from
+            # the strategy engine, not the AI. Don't crash if model init fails.
+            is_engine_strategy = self.active_strategy in ('engine_v6_1', 'engine_v1', 'engine_v1_3') and self.strategy_engine
+
             try:
                 add_console_log(f"⚙️ Initializing AI model {self.ai_provider}/{self.ai_model_name}...", "info")
             except Exception:
                 pass
+
             self.model = model_factory.get_model(
                 self.ai_provider, self.ai_model_name,
                 base_url=self.ai_base_url, api_key=self.ai_api_key
@@ -785,22 +791,28 @@ class TradingAgent:
             self.swarm = None
 
             if not self.model:
-                cprint(f"❌ Failed to initialize {self.ai_provider} model!", "red")
-                cprint("Available models:", "yellow")
-                for model_type in model_factory._models.keys():
-                    cprint(f"   - {model_type}", "yellow")
+                if is_engine_strategy:
+                    # Engine strategy doesn't need AI — continue without it
+                    cprint(f"⚠️ AI model not available, but engine strategy {self.active_strategy} doesn't need it", "yellow")
+                    try:
+                        add_console_log(f"⚠️ AI model unavailable — using engine strategy only", "warning")
+                    except Exception:
+                        pass
+                else:
+                    # AI confidence strategy REQUIRES the model
+                    cprint(f"❌ Failed to initialize {self.ai_provider} model!", "red")
+                    try:
+                        add_console_log(f"❌ Failed to initialize AI model: {self.ai_provider}", "error")
+                        add_console_log("Check AI_PROVIDER, AI_MODEL, AI_BASE_URL, AI_API_KEY in settings", "warning")
+                    except Exception:
+                        pass
+                    raise RuntimeError(f"Failed to initialize {self.ai_provider} model")
+            else:
+                cprint(f"✅ Using model: {self.model.model_name}", "green")
                 try:
-                    add_console_log(f"❌ Failed to initialize AI model: {self.ai_provider}", "error")
-                    add_console_log("Check AI_PROVIDER, AI_MODEL, AI_BASE_URL, AI_API_KEY in settings", "warning")
+                    add_console_log(f"✅ AI model ready: {self.model.model_name}", "success")
                 except Exception:
                     pass
-                raise RuntimeError(f"Failed to initialize {self.ai_provider} model")
-
-            cprint(f"✅ Using model: {self.model.model_name}", "green")
-            try:
-                add_console_log(f"✅ AI model ready: {self.model.model_name}", "success")
-            except Exception:
-                pass
 
         self.recommendations_df = pd.DataFrame(
             columns=["token", "action", "confidence", "reasoning"]
