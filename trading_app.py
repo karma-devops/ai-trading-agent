@@ -1813,6 +1813,15 @@ def get_ai_models():
             for p in all_providers:
                 all_models[p] = get_available_models_for_provider(p)
 
+            # If Ollama server is not live, return a minimal model list so the UI still works
+            if not all_models.get('ollama'):
+                all_models['ollama'] = {
+                    'kimi-k2.7-code': 'Kimi K2.7 Code (Ollama cloud)',
+                    'llama3.2': 'Llama 3.2 3B (local)',
+                    'qwen2.5': 'Qwen 2.5 7B (local)',
+                    'deepseek-v3.1:671b-q4_K_M': 'DeepSeek V3.1 671B Q4 (local)'
+                }
+
             return jsonify({
                 'success': True,
                 'providers': all_providers,

@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
     llvm \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -31,4 +32,4 @@ RUN mkdir -p /app/src/data /app/temp_data
 EXPOSE 5000
 
 # Start the dashboard backend
-CMD ["python", "trading_app.py"]
+CMD ["./start.sh"]

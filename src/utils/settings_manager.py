@@ -480,6 +480,10 @@ def validate_settings(settings):
         if not (url.startswith("http://") or url.startswith("https://")):
             errors.append("ai_base_url must be a valid http:// or https:// URL")
 
+    # Validate AI api_key is a string (can be empty)
+    if "ai_api_key" in settings and not isinstance(settings["ai_api_key"], str):
+        errors.append("ai_api_key must be a string")
+
     # Validate AI temperature
     if "ai_temperature" in settings and not validate_ai_temperature(settings["ai_temperature"]):
         errors.append("ai_temperature must be between 0.0 and 1.0")

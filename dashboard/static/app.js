@@ -761,12 +761,20 @@ function applySettings(settings) {
     selectedTokens = settings.monitored_tokens || ['ETH', 'BTC', 'SOL'];
     updateTokenSelection();
 
-    // Main model settings - Default to OpenRouter with FREE DeepSeek V3.1 Nex-N1
-    const defaultProvider = settings.ai_provider || 'openrouter';
-    const defaultModel = settings.ai_model || 'nex-agi/deepseek-v3.1-nex-n1:free';
+    // Main model settings - Default to Ollama cloud with kimi-k2.7-code
+    const defaultProvider = settings.ai_provider || 'ollama';
+    const defaultModel = settings.ai_model || 'kimi-k2.7-code';
     document.getElementById('main-provider-select').value = defaultProvider;
     updateMainModelOptions();
     document.getElementById('main-model-select').value = defaultModel;
+
+    // BYOK endpoint overrides
+    document.getElementById('ai-base-url').value = settings.ai_base_url || '';
+    document.getElementById('ai-api-key').value = settings.ai_api_key || '';
+
+    // Strategy selection
+    document.getElementById('strategy-select').value = settings.active_strategy || 'confidence_ai';
+    updateStrategyHint();
 
     // Temperature and max tokens
     const tempValue = Math.round((settings.ai_temperature || 0.3) * 100);
@@ -888,7 +896,10 @@ function getProviderDisplayName(provider) {
         'mistral': 'Mistral AI',
         'cohere': 'Cohere',
         'perplexity': 'Perplexity',
-        'groq': 'Grok'
+        'groq': 'Groq',
+        'ollama': 'Ollama (local/cloud)',
+        'ollamafreeapi': 'Ollama Free API',
+        'generic_openai': 'OpenAI-compatible (BYOK)'
     };
     return names[provider] || provider;
 }
@@ -924,6 +935,17 @@ document.addEventListener('DOMContentLoaded', () => {
         radio.addEventListener('change', updateSwarmModelsVisibility);
     });
 });
+
+// Update strategy hint text
+function updateStrategyHint() {
+    const select = document.getElementById('strategy-select');
+    const hint = document.getElementById('strategy-hint');
+    if (select.value === 'engine_v6_1') {
+        hint.textContent = 'Engine v6.1 uses trend/pin-bar/momentum signals. Best on PEPE and FARTCOIN.';
+    } else {
+        hint.textContent = 'AI model decides trades based on confidence score.';
+    }
+}
 
 // Render swarm models
 function renderSwarmModels() {
@@ -1092,6 +1114,13 @@ async function saveSettings() {
         ai_model: document.getElementById('main-model-select').value,
         ai_temperature: parseFloat((document.getElementById('main-temperature').value / 100).toFixed(1)),
         ai_max_tokens: maxTokens,
+
+        // BYOK endpoint overrides
+        ai_base_url: document.getElementById('ai-base-url').value.trim(),
+        ai_api_key: document.getElementById('ai-api-key').value.trim(),
+
+        // Strategy selection
+        active_strategy: document.getElementById('strategy-select').value,
 
         // Swarm models
         swarm_models: collectSwarmModels()

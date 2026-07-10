@@ -156,6 +156,10 @@
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v12m-6-6h12"></path></svg>
                     TOKEN
                 </button>
+                <button class="settings-tab" data-tab="strategy" onclick="switchSettingsTab('strategy')">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h20"></path><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-6"></path><path d="M12 2v10"></path></svg>
+                    STRATEGY
+                </button>
                 <button class="settings-tab" data-tab="models" onclick="switchSettingsTab('models')">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>
                     MODELS
@@ -341,6 +345,38 @@
 
                         <div class="swarm-models-list" id="swarm-models-list">
                             <!-- Swarm models populated by JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- STRATEGY Tab Content -->
+                <div id="tab-strategy" class="settings-tab-content">
+                    <div class="setting-section">
+                        <h3 class="section-title">Trading Strategy</h3>
+                        <p class="section-desc">Choose how the agent generates entry signals</p>
+
+                        <div class="setting-group">
+                            <label for="strategy-select">Active Strategy</label>
+                            <select id="strategy-select" class="setting-input" onchange="updateStrategyHint()">
+                                <option value="confidence_ai">AI Confidence (default) - All tokens</option>
+                                <option value="engine_v6_1">Engine v6.1 - Best for PEPE and FARTCOIN</option>
+                            </select>
+                            <span class="input-hint" id="strategy-hint">AI model decides trades based on confidence score.</span>
+                        </div>
+                    </div>
+
+                    <div class="setting-section">
+                        <h3 class="section-title">BYOK AI Endpoint (optional)</h3>
+                        <p class="section-desc">Override endpoint and key for Ollama cloud or any OpenAI-compatible provider</p>
+
+                        <div class="setting-group">
+                            <label for="ai-base-url">Base URL</label>
+                            <input type="text" id="ai-base-url" class="setting-input" placeholder="https://ollama.com/v1 or https://api.openrouter.ai/v1" />
+                        </div>
+
+                        <div class="setting-group">
+                            <label for="ai-api-key">API Key</label>
+                            <input type="password" id="ai-api-key" class="setting-input" placeholder="Leave blank to use .env value" />
                         </div>
                     </div>
                 </div>
