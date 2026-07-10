@@ -96,6 +96,8 @@ app.config['SECRET_KEY'] = flask_secret
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
+from werkzeug.security import generate_password_hash, check_password_hash
+
 # Login credentials (loaded from environment variables for security)
 VALID_CREDENTIALS = {
     'username': os.getenv('DASHBOARD_USERNAME', ''),
@@ -103,10 +105,15 @@ VALID_CREDENTIALS = {
     'password': os.getenv('DASHBOARD_PASSWORD', '')
 }
 
-# Validate credentials are set
-if not all(VALID_CREDENTIALS.values()):
-    print("⚠️ WARNING: Dashboard credentials not fully configured in .env!")
-    print("⚠️ Set DASHBOARD_USERNAME, DASHBOARD_EMAIL, and DASHBOARD_PASSWORD")
+# Securely hash password at startup to prevent plaintext memory comparison
+raw_pw = VALID_CREDENTIALS['password']
+if raw_pw:
+    if raw_pw.startswith(('pbkdf2:sha256:', 'scrypt:', 'argon2:')):
+        VALID_CREDENTIALS['password_hash'] = raw_pw
+    else:
+        VALID_CREDENTIALS['password_hash'] = generate_password_hash(raw_pw)
+else:
+    VALID_CREDENTIALS['password_hash'] = ''
 
 # Enable CORS
 CORS(app)
@@ -1144,14 +1151,15 @@ def api_login():
     username = data.get('username', '').strip()
     password = data.get('password', '').strip()
 
-    # Check credentials (username OR email, and password)
-    if ((username == VALID_CREDENTIALS['username'] or
-         username == VALID_CREDENTIALS['email']) and
-        password == VALID_CREDENTIALS['password']):
+    # Check credentials securely using salted hashing verification
+    is_valid_user = (username == VALID_CREDENTIALS['username'] or username == VALID_CREDENTIALS['email'])
+    is_valid_password = check_password_hash(VALID_CREDENTIALS['password_hash'], password) if VALID_CREDENTIALS['password_hash'] else False
+
+    if is_valid_user and is_valid_password:
 
         session['logged_in'] = True
         session['username'] = VALID_CREDENTIALS['username']
-        add_console_log(f"User {VALID_CREDENTIALS['username']} logged in", "success")
+        add_console_log(f"User {VALID_CREDENTIALS['username']} logged in securely", "success")
 
         return jsonify({
             'success': True,
