@@ -2719,7 +2719,7 @@ def submit_rbi_idea():
         rbi_job_queue.put(job)
 
         # Start worker if not running
-        start_rbi_worker()
+        # start_rbi_worker()  # Disabled — backtester not used in this build
 
         add_console_log(f"RBI: New idea submitted: {idea[:50]}...", "info")
 
@@ -3030,6 +3030,28 @@ def ollama_pull_model():
 
 
 # ============================================================================
+# START BACKGROUND THREADS (module-level — works under Gunicorn)
+# ============================================================================
+
+# Start log writer thread (drains log_queue → console_logs.json)
+log_writer_running = True
+log_writer_thread = threading.Thread(target=log_writer_worker, daemon=True)
+log_writer_thread.start()
+print("✅ Log writer thread started at module level")
+
+# Start backtest log writer thread
+backtest_log_writer_running = True
+backtest_log_writer_thread = threading.Thread(target=backtest_log_writer_worker, daemon=True)
+backtest_log_writer_thread.start()
+
+# Load RBI jobs (for backtest page, if enabled)
+try:
+    load_rbi_jobs()
+except Exception as e:
+    print(f"⚠️ Could not load RBI jobs: {e}")
+
+
+# ============================================================================
 # GRACEFUL SHUTDOWN HANDLER
 # ============================================================================
 
@@ -3230,23 +3252,7 @@ if __name__ == '__main__':
     except Exception as ws_err:
         print(f"⚠️ WebSocket initialization failed: {ws_err}")
 
-    # Start log writer thread
-    print("🚀 Starting async log writer...")
-    log_writer_running = True
-    log_writer_thread = threading.Thread(target=log_writer_worker, daemon=True)
-    log_writer_thread.start()
-    print("✅ Log writer started")
-
-    # Start backtest log writer thread
-    print("🔬 Starting backtest log writer...")
-    backtest_log_writer_running = True
-    backtest_log_writer_thread = threading.Thread(target=backtest_log_writer_worker, daemon=True)
-    backtest_log_writer_thread.start()
-    print("✅ Backtest log writer started")
-
-    # Load RBI jobs from persistent storage
-    print("🔬 Loading RBI jobs...")
-    load_rbi_jobs()
+    # Log writer and RBI jobs are now started at module level (works under Gunicorn)
     print(f"✅ Loaded {len(rbi_jobs)} RBI jobs")
 
     # Startup Banner for Terminal

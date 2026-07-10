@@ -51,7 +51,7 @@ class GenericOpenAIModel(BaseModel):
                 model=self.model_name,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"{user_content}_{timestamp}"}
+                    {"role": "user", "content": user_content}
                 ],
                 temperature=temperature,
                 max_tokens=max_tokens if max_tokens else self.max_tokens,
@@ -76,15 +76,19 @@ class GenericOpenAIModel(BaseModel):
         except Exception as e:
             error_str = str(e)
             if "429" in error_str or "rate_limit" in error_str:
-                cprint(f"⚠️  Generic provider rate limit exceeded: {error_str[:80]}", "yellow")
-                return None
-            if "402" in error_str or "insufficient" in error_str:
-                cprint(f"⚠️  Generic provider credits insufficient: {error_str[:80]}", "yellow")
-                return None
-            if "503" in error_str:
+                cprint(f"⚠️  Rate limited: {error_str[:80]}", "yellow")
+            elif "402" in error_str or "insufficient" in error_str:
+                cprint(f"⚠️  Credits insufficient: {error_str[:80]}", "yellow")
+            elif "503" in error_str:
                 raise e
-            cprint(f"❌ Generic OpenAI provider error: {error_str[:120]}", "red")
-            return None
+            else:
+                cprint(f"❌ Provider error: {error_str[:120]}", "red")
+            return ModelResponse(
+                content="",
+                raw_response={"error": error_str},
+                model_name=self.model_name,
+                usage=None
+            )
 
     def is_available(self) -> bool:
         return self.client is not None

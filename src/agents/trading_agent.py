@@ -264,11 +264,12 @@ MIN_CLOSE_CONFIDENCE = 70
 # Profit threshold for automatic position closing (percentage), Positions with profit >= this value close immediately, bypassing other checks
 TP_THRESHOLD = 0.5
 
-# SINGLE MODEL SETTINGS
-AI_MODEL_TYPE = 'openrouter' 
-AI_MODEL_NAME = 'x-ai/grok-4.1-fast' 
-AI_TEMPERATURE = 0.6   # Official recommended "sweet spot"
-AI_MAX_TOKENS = 8024   # Increased for multi-step reasoning
+# SINGLE MODEL SETTINGS (read from env vars via config)
+from src.config import AI_MODEL_TYPE as _cfg_ai_type, AI_MODEL as _cfg_ai_model
+AI_MODEL_TYPE = os.getenv('AI_PROVIDER', _cfg_ai_type)
+AI_MODEL_NAME = os.getenv('AI_MODEL', _cfg_ai_model)
+AI_TEMPERATURE = 0.6
+AI_MAX_TOKENS = 8024
 
 # 💰 POSITION SIZING & RISK MANAGEMENT
 USE_PORTFOLIO_ALLOCATION = True

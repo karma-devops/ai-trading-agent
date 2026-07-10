@@ -232,9 +232,19 @@ class ModelFactory:
                     if base_url:
                         init_kwargs["base_url"] = base_url
                     elif model_type == "ollama":
-                        init_kwargs["base_url"] = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/api")
+                        # Fallback: try AI_BASE_URL first, then OLLAMA_BASE_URL
+                        ai_url = os.getenv("AI_BASE_URL", "")
+                        if ai_url:
+                            init_kwargs["base_url"] = ai_url
+                        else:
+                            init_kwargs["base_url"] = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/api")
                     if api_key:
                         init_kwargs["api_key"] = api_key
+                    elif model_type == "ollama":
+                        # Also pass AI_API_KEY for OpenAI-compatible mode
+                        ai_key = os.getenv("AI_API_KEY", "")
+                        if ai_key:
+                            init_kwargs["api_key"] = ai_key
                     model_instance = model_class(**init_kwargs)
                     if model_instance.is_available():
                         self._models[model_type] = model_instance

@@ -12,161 +12,83 @@ from termcolor import cprint
 from .base_model import BaseModel, ModelResponse
 
 class OllamaModel(BaseModel):
-    """Implementation for local Ollama models
+    """Implementation for Ollama models (local or OpenAI-compatible cloud endpoint)."""
 
-    Requires Ollama to be running locally: ollama serve
-    Install models with: ollama pull <model_name>
-    """
-
-    # Ollama server configuration
-    DEFAULT_BASE_URL = "http://localhost:11434/api"
-
-    # Available Ollama models - can be expanded based on what's installed locally
-    # Dict format for consistency with other model providers
-    # Priority: Quantized DeepSeek models for trading (memory efficient)
-    # To install: ollama pull <model_name>
-    AVAILABLE_MODELS = {
-        # ===== DeepSeek V3.2 (RECOMMENDED for Trading) =====
-        "deepseek-v3.2:671b-q4_K_M": {
-            "description": "DeepSeek V3.2 671B Quantized - Best trading model (Q4_K_M)",
-            "parameters": "671B",
-            "recommended": True
-        },
-        "deepseek-v3.2": {
-            "description": "DeepSeek V3.2 - Latest flagship (671B parameters)",
-            "parameters": "671B",
-            "recommended": True
-        },
-        # ===== DeepSeek V3.1 (Stable for Trading) =====
-        "deepseek-v3.1:671b": {
-            "description": "DeepSeek V3.1 671B - Stable trading model ⚡ Recommended",
-            "parameters": "671B",
-            "recommended": True
-        },
-        "deepseek-v3.1:671b-q4_K_M": {
-            "description": "DeepSeek V3.1 671B Quantized - Memory efficient",
-            "parameters": "671B"
-        },
-        # ===== DeepSeek Reasoning Models =====
-        "deepseek-r1": {
-            "description": "DeepSeek R1 - Reasoning model (7B parameters, local)",
-            "parameters": "7B"
-        },
-        "deepseek-r1:14b": {
-            "description": "DeepSeek R1 14B - Enhanced reasoning (14B parameters)",
-            "parameters": "14B"
-        },
-        "deepseek-r1:32b": {
-            "description": "DeepSeek R1 32B - Strong reasoning (32B parameters)",
-            "parameters": "32B"
-        },
-        # ===== DeepSeek Coder =====
-        "deepseek-coder": {
-            "description": "DeepSeek Coder - STEM and code expert (6.7B parameters, local)",
-            "parameters": "6.7B"
-        },
-        "deepseek-coder:33b": {
-            "description": "DeepSeek Coder 33B - Advanced coding (33B parameters)",
-            "parameters": "33B"
-        },
-        # ===== Qwen Models =====
-        "qwen3:8b": {
-            "description": "Qwen 3 8B - Fast reasoning model (8B parameters, local)",
-            "parameters": "8B"
-        },
-        "qwen3:14b": {
-            "description": "Qwen 3 14B - Balanced performance (14B parameters)",
-            "parameters": "14B"
-        },
-        "qwen3:32b": {
-            "description": "Qwen 3 32B - Strong reasoning (32B parameters)",
-            "parameters": "32B"
-        },
-        # ===== LLaMA Models =====
-        "llama3.2": {
-            "description": "Meta Llama 3.2 - Fast and efficient (default, local)",
-            "parameters": "8B"
-        },
-        "llama3.3:70b": {
-            "description": "Meta Llama 3.3 70B - Large model (70B parameters)",
-            "parameters": "70B"
-        },
-        # ===== Other Models =====
-        "mistral": {
-            "description": "Mistral - General purpose model (7B parameters, local)",
-            "parameters": "7B"
-        },
-        "gemma:2b": {
-            "description": "Google Gemma 2B - Lightweight model (2B parameters, local)",
-            "parameters": "2B"
-        },
-    }
-
-    # Ollama server configuration
-    DEFAULT_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/api")
+    DEFAULT_BASE_URL = os.getenv("AI_BASE_URL", os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/api"))
 
     def __init__(self, api_key=None, model_name="kimi-k2.7-code", base_url=None):
         """Initialize Ollama model
 
         Args:
-            api_key: Not used for Ollama but kept for compatibility
-            model_name: Name of the Ollama model to use (default: kimi-k2.7-code)
-            base_url: Custom Ollama API endpoint (default from OLLAMA_BASE_URL env or http://localhost:11434/api)
+            api_key: API key (for OpenAI-compatible cloud endpoints like ollama.com/v1)
+            model_name: Name of the model to use
+            base_url: Custom API endpoint. If URL contains /v1, uses OpenAI-compatible client.
         """
+        self._api_key = api_key
         self.base_url = base_url or self.DEFAULT_BASE_URL
         self.model_name = model_name
         self._is_connected = False
         self._connection_error = None
         self._available_models = []
+        self._use_openai_compat = False
+        self._openai_client = None
 
-        # Pass a dummy API key to satisfy BaseModel
         super().__init__(api_key="LOCAL_OLLAMA")
         self.initialize_client()
 
     def initialize_client(self):
-        """Initialize the Ollama client connection
-
-        This method handles connection errors gracefully without raising exceptions.
-        Check self._is_connected to verify connection status.
-        """
+        """Initialize the Ollama client connection.
+        Detects if base_url is OpenAI-compatible (/v1) and uses OpenAI client."""
         self._is_connected = False
         self._connection_error = None
+        self._use_openai_compat = False
+        self._openai_client = None
 
+        # If base_url contains /v1, use OpenAI-compatible client
+        if self.base_url and '/v1' in self.base_url:
+            try:
+                from openai import OpenAI
+                self._openai_client = OpenAI(
+                    api_key=self._api_key if self._api_key else "ollama",
+                    base_url=self.base_url
+                )
+                self._is_connected = True
+                self._use_openai_compat = True
+                cprint(f"✨ Connected to Ollama via OpenAI-compatible API: {self.base_url}", "green")
+                cprint(f"   Model: {self.model_name}", "cyan")
+                return
+            except Exception as e:
+                self._connection_error = f"OpenAI client init failed: {e}"
+                cprint(f"⚠️ {self._connection_error}", "yellow")
+                return
+
+        # Native Ollama API (localhost:11434)
         try:
             response = requests.get(f"{self.base_url}/tags", timeout=5)
             if response.status_code == 200:
                 self._is_connected = True
                 cprint(f"✨ Connected to Ollama server at {self.base_url}", "green")
 
-                # Get available models
                 models = response.json().get("models", [])
                 if models:
                     self._available_models = [model["name"] for model in models]
                     cprint(f"📚 {len(self._available_models)} models available locally", "cyan")
 
-                    # Check if requested model is available
                     if self.model_name not in self._available_models:
-                        # Try partial match (e.g., "deepseek-v3.1" matches "deepseek-v3.1:671b")
                         partial_matches = [m for m in self._available_models if self.model_name in m or m in self.model_name]
                         if partial_matches:
                             cprint(f"   Using closest match: {partial_matches[0]}", "cyan")
                             self.model_name = partial_matches[0]
                         else:
                             cprint(f"⚠️ Model '{self.model_name}' not found locally!", "yellow")
-                            cprint(f"   Install it with: ollama pull {self.model_name}", "yellow")
-                            cprint(f"   Available models: {self._available_models[:5]}...", "cyan")
-                else:
-                    cprint("⚠️ No models installed! Pull a model first:", "yellow")
-                    cprint(f"   ollama pull {self.model_name}", "yellow")
             else:
                 self._connection_error = f"Ollama API returned status code: {response.status_code}"
                 cprint(f"⚠️ {self._connection_error}", "yellow")
 
         except requests.exceptions.ConnectionError:
             self._connection_error = "Ollama server not running"
-            cprint("⚠️ Ollama server not running at {self.base_url}", "yellow")
+            cprint(f"⚠️ Ollama server not running at {self.base_url}", "yellow")
             cprint("   💡 Start with: ollama serve", "cyan")
-            cprint("   💡 Or use 'ollamafreeapi' or 'gemini' providers instead (no local server needed)", "cyan")
 
         except requests.exceptions.Timeout:
             self._connection_error = "Connection timeout"
@@ -210,37 +132,61 @@ class OllamaModel(BaseModel):
         return self._is_connected
     
     def generate_response(self, system_prompt, user_content, temperature=0.7, max_tokens=None, **kwargs):
-        """Generate a response using the Ollama model
-
-        Args:
-            system_prompt: System prompt to guide the model
-            user_content: User's input content
-            temperature: Controls randomness (0.0 to 1.0)
-            max_tokens: Maximum tokens to generate (ignored by Ollama, kept for compatibility)
-            **kwargs: Additional arguments (ignored, kept for compatibility)
-
-        Returns:
-            ModelResponse object (always returns ModelResponse, never None)
-        """
-        # Check if connected, attempt reconnect if not
+        """Generate a response using Ollama (native or OpenAI-compatible)."""
         if not self._is_connected:
             self.reconnect()
             if not self._is_connected:
                 return ModelResponse(
                     content="",
-                    raw_response={"error": f"Ollama server not available: {self._connection_error}"},
+                    raw_response={"error": f"Ollama not available: {self._connection_error}"},
                     model_name=self.model_name,
                     usage=None
                 )
 
+        # OpenAI-compatible mode
+        if self._use_openai_compat and self._openai_client:
+            try:
+                response = self._openai_client.chat.completions.create(
+                    model=self.model_name,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_content}
+                    ],
+                    temperature=temperature,
+                    max_tokens=max_tokens if max_tokens else 4000,
+                    stream=False
+                )
+                raw_content = response.choices[0].message.content or ""
+
+                # Strip reasoning tags
+                import re
+                filtered = re.sub(r'ILD.*?ILD', '', raw_content, flags=re.DOTALL).strip()
+                if 'ILD' in filtered:
+                    filtered = filtered.split('ILD')[0].strip()
+                final = filtered if filtered else raw_content
+
+                return ModelResponse(
+                    content=final,
+                    raw_response=response,
+                    model_name=self.model_name,
+                    usage=getattr(response, 'usage', None)
+                )
+            except Exception as e:
+                cprint(f"❌ Ollama OpenAI-compatible error: {str(e)}", "red")
+                return ModelResponse(
+                    content="",
+                    raw_response={"error": str(e)},
+                    model_name=self.model_name,
+                    usage=None
+                )
+
+        # Native Ollama mode
         try:
-            # Format the prompt with system and user content
             messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content}
             ]
-            
-            # Prepare the request
+
             data = {
                 "model": self.model_name,
                 "messages": messages,
@@ -249,46 +195,35 @@ class OllamaModel(BaseModel):
                     "temperature": temperature
                 }
             }
-            
-            # Make the request with 90 second timeout
+
             response = requests.post(
                 f"{self.base_url}/chat",
                 json=data,
-                timeout=90  # Match swarm timeout
+                timeout=90
             )
-            
+
             if response.status_code == 200:
                 response_data = response.json()
                 raw_content = response_data.get("message", {}).get("content", "")
 
-                # Remove <think>...</think> tags and their content (Qwen reasoning)
                 import re
-
-                # First, try to remove complete <think>...</think> blocks
-                filtered_content = re.sub(r'<think>.*?</think>', '', raw_content, flags=re.DOTALL).strip()
-
-                # If <think> tag exists but wasn't removed (unclosed tag due to token limit),
-                # remove everything from <think> onwards
-                if '<think>' in filtered_content:
-                    filtered_content = filtered_content.split('<think>')[0].strip()
-
-                # If filtering removed everything, return the original (in case it's not a Qwen model)
+                filtered_content = re.sub(r'ILD.*?ILD', '', raw_content, flags=re.DOTALL).strip()
+                if 'ILD' in filtered_content:
+                    filtered_content = filtered_content.split('ILD')[0].strip()
                 final_content = filtered_content if filtered_content else raw_content
 
                 return ModelResponse(
                     content=final_content,
                     raw_response=response_data,
                     model_name=self.model_name,
-                    usage=None  # Ollama doesn't provide token usage info
+                    usage=None
                 )
             else:
                 cprint(f"❌ Ollama API error: {response.status_code}", "red")
-                cprint(f"Response: {response.text}", "red")
                 raise Exception(f"Ollama API error: {response.status_code}")
 
         except Exception as e:
             cprint(f"❌ Error generating response: {str(e)}", "red")
-            # Don't re-raise - let swarm agent handle failed responses gracefully
             return ModelResponse(
                 content="",
                 raw_response={"error": str(e)},

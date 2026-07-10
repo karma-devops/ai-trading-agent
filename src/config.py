@@ -16,8 +16,8 @@ HYPERLIQUID_LEVERAGE = 10  # Default leverage (1-50 on HyperLiquid)
 # Target notional = starting_balance * TARGET_BALANCE_MULTIPLIER
 # Single position cap = starting_balance * MAX_POSITION_PCT
 # HyperLiquid minimum order size ($10) is enforced by the trading core.
-TARGET_BALANCE_MULTIPLIER = 50
-MAX_POSITION_PCT = 0.92  # Max 92% of account balance in one position
+TARGET_BALANCE_MULTIPLIER = 5   # Target 5x balance (was 50x — too aggressive)
+MAX_POSITION_PCT = 0.50         # Max 50% of balance per position (was 92%)
 
 # Legacy aliases (kept for compatibility until other files are updated)
 usd_size = None
@@ -70,15 +70,14 @@ MAX_LOSS_GAIN_CHECK_HOURS = 12
 SLEEP_BETWEEN_RUNS_MINUTES = 1  # Check markets every minute
 
 # Max Loss/Gain Settings
-USE_PERCENTAGE = False
+USE_PERCENTAGE = True  # Use percentage-based limits (better for any account size)
 
-# Percentage-based limits (used when USE_PERCENTAGE = True)
-MAX_LOSS_PERCENT = 10   # 10% max loss
-MAX_GAIN_PERCENT = 20   # 20% max gain
+MAX_LOSS_PERCENT = 15   # 15% max loss
+MAX_GAIN_PERCENT = 50   # 50% max gain
 
-# USD-based limits (Protective Stops)
-MAX_LOSS_USD = 2   # If we lose $2, stop trading
-MAX_GAIN_USD = 3   # If we make $3, stop and take profit
+# USD-based limits (set high so percentage limits take priority)
+MAX_LOSS_USD = 1000
+MAX_GAIN_USD = 1000
 
 # USD MINIMUM BALANCE RISK CONTROL
 MINIMUM_BALANCE_USD = 5  # If balance drops below $5, close everything
@@ -97,10 +96,11 @@ DAYSBACK_4_DATA = 2
 DATA_TIMEFRAME = '30m'
 SAVE_OHLCV_DATA = False
 
-# AI Model Settings
-AI_MODEL_TYPE = 'ollama'  # Default provider: ollama (set base URL in .env)
-AI_MODEL = "kimi-k2.7-code"  # Default model for Ollama cloud
-AI_BASE_URL = ""  # Set in .env, e.g. https://ollama.com/v1
+# AI Model Settings (read from env vars, fallback to defaults)
+AI_MODEL_TYPE = os.getenv('AI_PROVIDER', 'ollama')
+AI_MODEL = os.getenv('AI_MODEL', 'kimi-k2.7-code')
+AI_BASE_URL = os.getenv('AI_BASE_URL', '')
+AI_API_KEY = os.getenv('AI_API_KEY', '')
 AI_MAX_TOKENS = 8024
 AI_TEMPERATURE = 0.6
 
@@ -117,22 +117,10 @@ STRATEGY_MIN_CONFIDENCE = 0.6   # 60% confidence threshold
 USE_WEBSOCKET_FEEDS = True
 WEBSOCKET_FALLBACK_TO_API = True  # If WebSocket fails, fall back to API polling
 
-# Legacy/Solana Variables (safe defaults, ignored)
-symbol = 'SOL'
+# Legacy variables (kept for import compatibility, not used)
 tokens_to_trade = HYPERLIQUID_SYMBOLS
 MONITORED_TOKENS = []
-PRIORITY_FEE = 100000
-sell_at_multiple = 3
-USDC_SIZE = 1
-limit = 49
-timeframe = '15m'
-stop_loss_percentage = -0.24
 EXIT_ALL_POSITIONS = False
-DO_NOT_TRADE_LIST = ['777']
-CLOSED_POSITIONS_TXT = '777'
-minimum_trades_in_last_hour = 2
-MIN_TRADES_LAST_HOUR = 2
-REALTIME_CLIPS_ENABLED = False
 
 # Safety switch - true = log only, false = execute real trades
 DRY_RUN = os.getenv("DRY_RUN", "true").lower() == "true"
