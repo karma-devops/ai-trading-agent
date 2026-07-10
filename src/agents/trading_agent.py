@@ -659,9 +659,28 @@ class TradingAgent:
             try:
                 from src.strategies.engine_v6_1 import EngineV6_1Strategy
                 self.strategy_engine = EngineV6_1Strategy()
+                cprint(f"✅ Loaded Engine v6.1 strategy", "green")
             except Exception as e:
                 cprint(f"⚠️ Could not load Engine v6.1: {e}", "yellow")
                 self.active_strategy = 'confidence_ai'
+        elif self.active_strategy == 'engine_v1':
+            try:
+                from src.strategies.engine_v1 import EngineV1Strategy
+                self.strategy_engine = EngineV1Strategy()
+                cprint(f"✅ Loaded Engine v1 (Eve Engine) strategy", "green")
+            except Exception as e:
+                cprint(f"⚠️ Could not load Engine v1: {e}", "yellow")
+                self.active_strategy = 'confidence_ai'
+        elif self.active_strategy == 'engine_v1_3':
+            try:
+                from src.strategies.engine_v1_3 import EngineV1_3Strategy
+                self.strategy_engine = EngineV1_3Strategy()
+                cprint(f"✅ Loaded Engine v1.3 (Eve Engine Scalp) strategy", "green")
+            except Exception as e:
+                cprint(f"⚠️ Could not load Engine v1.3: {e}", "yellow")
+                self.active_strategy = 'confidence_ai'
+        else:
+            cprint(f"✅ Using AI Confidence strategy (default)", "green")
 
         # Store swarm mode settings (use passed values or fall back to defaults)
         self.use_swarm_mode = (swarm_mode == 'swarm') if swarm_mode is not None else DEFAULT_SWARM_MODE
@@ -671,20 +690,30 @@ class TradingAgent:
         if EXCHANGE == "HYPERLIQUID":
             cprint("🔑 Initializing Hyperliquid Account...", "cyan")
             try:
-                # Standardized key lookup
-                raw_key = os.getenv("HYPER_LIQUID_ETH_PRIVATE_KEY", "") or os.getenv("HYPER_LIQUID_KEY", "")
+                # Standardized key lookup: secrets JSON → env → legacy
+                from src.utils.secrets_manager import load_secrets
+                secrets = load_secrets()
+                trading_keys = secrets.get("trading_keys", {})
+                raw_key = trading_keys.get("hyperliquid_private_key")
+                if not raw_key:
+                    raw_key = os.getenv("HYPER_LIQUID_ETH_PRIVATE_KEY", "")
+                if not raw_key:
+                    raw_key = os.getenv("HYPER_LIQUID_KEY", "")
                 clean_key = raw_key.strip().replace('"', '').replace("'", "")
 
                 if not clean_key:
-                    raise ValueError("Private Key not found in .env")
+                    raise ValueError("HyperLiquid private key not found")
 
                 self.account = Account.from_key(clean_key)
-                self.address = os.getenv("ACCOUNT_ADDRESS")
 
+                # Wallet address: secrets JSON → env → derived from key
+                self.address = trading_keys.get("hyperliquid_wallet_address")
+                if not self.address:
+                    self.address = os.getenv("ACCOUNT_ADDRESS", "")
                 if not self.address:
                     self.address = self.account.address
 
-                cprint(f"✅ Account loaded successfully! Address: {self.address}", "green")
+                cprint(f"✅ Account loaded: {self.address[:8]}...{self.address[-4:]}", "green")
             except Exception as e:
                 cprint(f"❌ Error loading key: {e}", "red")
                 sys.exit(1)
@@ -2881,8 +2910,10 @@ Return ONLY valid JSON with the following structure:
 
             # Engine v6.1 path: generate signals directly, skip AI entry analysis
             if self.active_strategy in ('engine_v6_1', 'engine_v1', 'engine_v1_3') and self.strategy_engine:
-                cprint(f"🚀 {self.active_strategy} is active - generating technical entry signals", "magenta", attrs=["bold"])
+                add_console_log(f"🚀 {self.active_strategy} generating technical signals", "info")
                 engine_signals = self._compute_engine_signals(market_data)
+                signal_count = sum(1 for s in engine_signals.values() if s["direction"] in ("BUY", "SELL"))
+                add_console_log(f"  {len(engine_signals)} tokens analyzed, {signal_count} signals generated", "info")
                 for token, sig in engine_signals.items():
                     if sig["direction"] in ("BUY", "SELL"):
                         self.recommendations_df = pd.concat(

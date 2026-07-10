@@ -1059,6 +1059,8 @@ def run_trading_agent():
     add_console_log(f"Settings: {user_settings.get('timeframe')} timeframe, {user_settings.get('days_back')} days, {user_settings.get('sleep_minutes')} min cycle", "info")
     add_console_log(f"Mode: {mode_display} | Tokens: {', '.join(monitored_tokens)}", "info")
     add_console_log(f"AI Model: {user_settings.get('ai_provider')}/{user_settings.get('ai_model')}", "info")
+    add_console_log(f"Strategy: {user_settings.get('active_strategy', 'confidence_ai')}", "info")
+    add_console_log(f"Starting Balance: ${user_settings.get('starting_balance', 10.0)} USDC", "info")
 
     # Log swarm models if in swarm mode
     if swarm_mode == 'swarm':
@@ -1141,6 +1143,16 @@ def run_trading_agent():
                 nothing_count = len(agent.recommendations_df[agent.recommendations_df['action'] == 'NOTHING'])
 
                 add_console_log(f"Signals: {buy_count} BUY, {sell_count} SELL, {nothing_count} HOLD", "trade")
+
+                # Log per-token decisions
+                for _, row in agent.recommendations_df.iterrows():
+                    token = row.get('token', row.get('symbol', '?'))
+                    action = row.get('action', '?')
+                    confidence = row.get('confidence', 0)
+                    if action != 'NOTHING':
+                        add_console_log(f"  {token}: {action} (confidence: {confidence}%)", "trade")
+            else:
+                add_console_log("No signals generated this cycle", "warning")
 
             # Wait before next cycle
             add_console_log("Finished trading", "info")
