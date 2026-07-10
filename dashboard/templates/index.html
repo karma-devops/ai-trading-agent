@@ -336,9 +336,11 @@
                                 </div>
                                 <div class="setting-group half">
                                     <label for="main-model-select">Model</label>
-                                    <select id="main-model-select" class="setting-input">
+                                    <select id="main-model-select" class="setting-input" onchange="onModelSelectChange()">
                                         <!-- Populated by JS -->
                                     </select>
+                                    <input type="text" id="main-model-manual" class="setting-input" style="margin-top: 6px; display: none;" placeholder="Enter model name (e.g. deepseek/deepseek-v4-0324:free)" />
+                                    <a id="model-catalog-link" href="#" target="_blank" style="font-size: 11px; color: var(--text-muted); margin-top: 4px; display: block;">View models →</a>
                                 </div>
                             </div>
                             <div class="setting-row">

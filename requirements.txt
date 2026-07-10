@@ -1,13 +1,12 @@
 # ============================================================================
 # HyperLiquid Trading Agent - Private Deployment Dependencies
+# Trimmed to core providers only: OpenAI-compatible, Ollama, OpenRouter,
+# Anthropic, Google Gemini. Others can be pip installed manually if needed.
 # ============================================================================
 
 # Web framework
-cachetools==5.5.2
-distro==1.9.0
 flask==3.0.0
 flask_cors==5.0.0
-jiter==0.12.0
 python-dotenv==1.2.1
 requests==2.32.5
 urllib3==2.6.2
@@ -29,15 +28,12 @@ pyasn1_modules==0.4.2
 pycryptodome==3.23.0
 rlp==4.1.0
 
-# AI providers
+# AI providers (core only — pip install others manually if needed)
+openai==2.14.0
 anthropic==0.75.0
 google-generativeai==0.8.6
-groq==1.0.0
-openai==2.14.0
-ollamafreeapi==0.1.0
 
 # Data & analysis
-matplotlib-inline==0.2.1
 numpy>=2.2.6
 pandas==2.3.3
 pandas-ta==0.4.71b0
@@ -46,7 +42,6 @@ pytz==2025.2
 tzdata==2025.3
 
 # Utils
-regex==2025.11.3
 rich==14.2.0
 six==1.17.0
 termcolor==3.2.0
@@ -64,6 +59,12 @@ websockets==15.0
 # Production server
 gunicorn==23.0.0
 
-# Optional but useful
-ipython==9.8.0
+# Typing
 typing_extensions==4.15.0
+
+# Removed (install manually if needed):
+# groq — pip install groq
+# ollamafreeapi — pip install ollamafreeapi
+# ipython — pip install ipython (dev only)
+# matplotlib-inline — dev only
+# cachetools, distro, jiter, regex — transitive deps, auto-installed

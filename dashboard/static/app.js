@@ -804,7 +804,27 @@ function applySettings(settings) {
     const defaultModel = settings.ai_model || 'kimi-k2.7-code';
     document.getElementById('main-provider-select').value = defaultProvider;
     updateMainModelOptions();
-    document.getElementById('main-model-select').value = defaultModel;
+
+    // Check if saved model exists in dropdown, otherwise use custom
+    const modelSelect = document.getElementById('main-model-select');
+    const savedModel = settings.ai_model || defaultModel;
+    let modelExists = false;
+    for (let i = 0; i < modelSelect.options.length; i++) {
+        if (modelSelect.options[i].value === savedModel) {
+            modelExists = true;
+            break;
+        }
+    }
+    if (modelExists) {
+        modelSelect.value = savedModel;
+        document.getElementById('main-model-manual').style.display = 'none';
+    } else {
+        // Model not in predefined list — use custom
+        modelSelect.value = '__custom__';
+        const manualInput = document.getElementById('main-model-manual');
+        manualInput.style.display = 'block';
+        manualInput.value = savedModel;
+    }
 
     // BYOK endpoint overrides
     document.getElementById('ai-base-url').value = settings.ai_base_url || '';
@@ -974,14 +994,72 @@ function getProviderDisplayName(provider) {
 }
 
 // Update main model dropdown based on provider
+// Provider catalog URLs for model reference
+const PROVIDER_CATALOGS = {
+    'ollama': 'https://ollama.com/models',
+    'openrouter': 'https://openrouter.ai/models',
+    'anthropic': 'https://docs.anthropic.com/en/docs/about-claude/models',
+    'openai': 'https://platform.openai.com/docs/models',
+    'gemini': 'https://ai.google.dev/gemini-api/docs/models',
+    'generic_openai': '',
+    'ollamafreeapi': 'https://ollama.com/models',
+    'groq': 'https://console.groq.com/docs/models',
+    'deepseek': 'https://platform.deepseek.com/docs/models',
+    'xai': 'https://docs.x.ai/docs/models',
+    'mistral': 'https://docs.mistral.ai/getting-started/models/models_overview/',
+    'cohere': 'https://docs.cohere.com/docs/models',
+    'perplexity': 'https://docs.perplexity.ai/guides/model-cards',
+};
+
 function updateMainModelOptions() {
     const provider = document.getElementById('main-provider-select').value;
     const modelSelect = document.getElementById('main-model-select');
     const models = availableModels[provider] || {};
 
-    modelSelect.innerHTML = Object.entries(models).map(([modelId, description]) => {
+    // Build options from known models + add "Custom..." option
+    let html = Object.entries(models).map(([modelId, description]) => {
         return `<option value="${modelId}">${description}</option>`;
     }).join('');
+
+    // Add custom entry option
+    html += '<option value="__custom__">Custom (type model name)...</option>';
+
+    modelSelect.innerHTML = html;
+
+    // Update catalog link
+    const catalogLink = document.getElementById('model-catalog-link');
+    const catalogUrl = PROVIDER_CATALOGS[provider] || '';
+    if (catalogUrl) {
+        catalogLink.href = catalogUrl;
+        catalogLink.style.display = 'block';
+        catalogLink.textContent = `Browse ${provider} models →`;
+    } else {
+        catalogLink.style.display = 'none';
+    }
+
+    // Hide manual input by default
+    document.getElementById('main-model-manual').style.display = 'none';
+}
+
+function onModelSelectChange() {
+    const select = document.getElementById('main-model-select');
+    const manualInput = document.getElementById('main-model-manual');
+
+    if (select.value === '__custom__') {
+        manualInput.style.display = 'block';
+        manualInput.focus();
+    } else {
+        manualInput.style.display = 'none';
+    }
+}
+
+function getSelectedModel() {
+    const select = document.getElementById('main-model-select');
+    if (select.value === '__custom__') {
+        const manual = document.getElementById('main-model-manual');
+        return manual.value.trim() || 'kimi-k2.7-code';
+    }
+    return select.value;
 }
 
 // Update slider value display
@@ -1009,11 +1087,15 @@ document.addEventListener('DOMContentLoaded', () => {
 function updateStrategyHint() {
     const select = document.getElementById('strategy-select');
     const hint = document.getElementById('strategy-hint');
-    if (select.value === 'engine_v6_1') {
-        hint.textContent = 'Engine v6.1 uses trend/pin-bar/momentum signals. Best on PEPE and FARTCOIN.';
-    } else {
-        hint.textContent = 'AI model decides trades based on confidence score.';
-    }
+    if (!select || !hint) return;
+
+    const hints = {
+        'confidence_ai': 'AI model decides trades based on confidence score.',
+        'engine_v6_1': 'Engine v6.1 uses trend/pin-bar/momentum signals. Best on PEPE and FARTCOIN.',
+        'engine_v1': 'Eve Engine v1 — 1h swing strategy. Best on PEPE.',
+        'engine_v1_3': 'Eve Engine v1.3 — 15m scalp (Aggressive 8/3). Best on PEPE.',
+    };
+    hint.textContent = hints[select.value] || 'Select a strategy.';
 }
 
 // Render swarm models
@@ -1183,7 +1265,7 @@ async function saveSettings() {
 
         // Main AI model settings
         ai_provider: document.getElementById('main-provider-select').value,
-        ai_model: document.getElementById('main-model-select').value,
+        ai_model: getSelectedModel(),
         ai_temperature: parseFloat((document.getElementById('main-temperature').value / 100).toFixed(1)),
         ai_max_tokens: maxTokens,
 
