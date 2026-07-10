@@ -96,10 +96,16 @@ DATA_TIMEFRAME = '30m'
 SAVE_OHLCV_DATA = False
 
 # AI Model Settings
-AI_MODEL_TYPE = 'openrouter'  # Default provider: openrouter
-AI_MODEL = "nex-agi/deepseek-v3.1-nex-n1:free"  # OpenRouter default
+AI_MODEL_TYPE = 'ollama'  # Default provider: ollama (set base URL in .env)
+AI_MODEL = "kimi-k2.7-code"  # Default model for Ollama cloud
+AI_BASE_URL = ""  # Set in .env, e.g. https://ollama.com/v1
 AI_MAX_TOKENS = 8024
 AI_TEMPERATURE = 0.6
+
+# Alternative defaults
+ALT_AI_MODEL_TYPE = 'openrouter'
+ALT_AI_MODEL = "deepseek/deepseek-v4-0324:free"  # DeepSeek V4 Flash on OpenRouter
+ALT_AI_BASE_URL = "https://openrouter.ai/api/v1"
 
 # Trading Strategy Agent Settings
 ENABLE_STRATEGIES = True

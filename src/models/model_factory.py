@@ -26,6 +26,7 @@ OllamaModel = None
 OllamaFreeAPIModel = None
 XAIModel = None
 OpenRouterModel = None
+GenericOpenAIModel = None
 
 try:
     from .claude_model import ClaudeModel
@@ -71,6 +72,11 @@ try:
     from .openrouter_model import OpenRouterModel
 except Exception as e:
     cprint(f"⚠️ openrouter_model not available: {e}", "yellow")
+
+try:
+    from .generic_openai_model import GenericOpenAIModel
+except Exception as e:
+    cprint(f"⚠️ generic_openai_model not available: {e}", "yellow")
 import random
 
 class ModelFactory:
@@ -97,6 +103,8 @@ class ModelFactory:
         MODEL_IMPLEMENTATIONS["xai"] = XAIModel
     if OpenRouterModel is not None:
         MODEL_IMPLEMENTATIONS["openrouter"] = OpenRouterModel
+    if GenericOpenAIModel is not None:
+        MODEL_IMPLEMENTATIONS["generic_openai"] = GenericOpenAIModel
     
     # Default models for each type - OPTIMIZED FOR TRADING
     # Priority: Quantized models for memory efficiency where available
@@ -106,10 +114,11 @@ class ModelFactory:
         "openai": "gpt-4.1-mini",                    # GPT-4.1 Mini - efficient
         "gemini": "gemini-2.5-flash",                # Gemini 2.5 Flash - FREE tier
         "deepseek": "deepseek-chat",                 # DeepSeek V3 - general purpose
-        "ollama": "deepseek-v3.1:671b-q4_K_M",       # DeepSeek V3.1 Quantized - memory efficient
+        "ollama": "kimi-k2.7-code",                  # Ollama cloud default
         "ollamafreeapi": "deepseek-v3.2",            # DeepSeek V3.2 - FREE, latest flagship
         "xai": "grok-4-1-fast-reasoning",            # xAI's Grok 4.1 - best overall
-        "openrouter": "nex-agi/deepseek-v3.1-nex-n1:free"  # OpenRouter - FREE default
+        "openrouter": "deepseek/deepseek-v4-0324:free",  # DeepSeek V4 Flash on OpenRouter
+        "generic_openai": "kimi-k2.7-code"           # Generic OpenAI-compatible default
     }
     
     def __init__(self):
@@ -201,29 +210,41 @@ class ModelFactory:
         else:
             cprint(f"\n✨ Ready to use: {', '.join(self._models.keys())}", "green")
     
-    def get_model(self, model_type: str, model_name: Optional[str] = None) -> Optional[BaseModel]:
+    def get_model(self, model_type: str, model_name: Optional[str] = None, base_url: Optional[str] = None) -> Optional[BaseModel]:
         """Get a specific model instance
 
-        This method handles dynamic model initialization - even if a model wasn't
-        available at startup (e.g., API key not set), it can be initialized later
-        when the key becomes available (e.g., via BYOK).
+        Supports on-demand initialization and BYOK. Pass base_url for Ollama
+        cloud or generic OpenAI-compatible endpoints.
         """
         if model_type not in self.MODEL_IMPLEMENTATIONS:
             cprint(f"⚠️ Unknown model type: {model_type}", "yellow")
             return None
 
         # If model not yet initialized, try to initialize it now
-        # This handles the case where API keys are added via BYOK after startup
         if model_type not in self._models:
             try:
-                # Special handling for models that don't need API keys
                 if model_type in ("ollama", "ollamafreeapi"):
                     model_class = self.MODEL_IMPLEMENTATIONS[model_type]
                     default_model = model_name or self.DEFAULT_MODELS.get(model_type)
-                    model_instance = model_class(model_name=default_model)
+                    init_kwargs = {"model_name": default_model}
+                    if base_url:
+                        init_kwargs["base_url"] = base_url
+                    elif model_type == "ollama":
+                        init_kwargs["base_url"] = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/api")
+                    model_instance = model_class(**init_kwargs)
                     if model_instance.is_available():
                         self._models[model_type] = model_instance
                         cprint(f"✅ {model_instance.model_name} initialized on-demand", "green")
+                elif model_type == "generic_openai":
+                    api_key = os.getenv("GENERIC_OPENAI_API_KEY") or os.getenv("OPENROUTER_API_KEY")
+                    if api_key:
+                        model_class = self.MODEL_IMPLEMENTATIONS[model_type]
+                        default_model = model_name or self.DEFAULT_MODELS.get(model_type)
+                        default_base = base_url or os.getenv("GENERIC_OPENAI_BASE_URL", "")
+                        model_instance = model_class(api_key=api_key, model_name=default_model, base_url=default_base)
+                        if model_instance.is_available():
+                            self._models[model_type] = model_instance
+                            cprint(f"✅ {model_instance.model_name} initialized on-demand", "green")
                 else:
                     # For API-based models, check if we now have an API key
                     key_mapping = self._get_api_key_mapping()
@@ -245,11 +266,20 @@ class ModelFactory:
         model = self._models[model_type]
         if model_name and model.model_name != model_name:
             try:
-                # Special handling for models that don't need API keys
                 if model_type in ("ollama", "ollamafreeapi"):
-                    model = self.MODEL_IMPLEMENTATIONS[model_type](model_name=model_name)
+                    kwargs = {"model_name": model_name}
+                    if base_url:
+                        kwargs["base_url"] = base_url
+                    elif model_type == "ollama":
+                        kwargs["base_url"] = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/api")
+                    model = self.MODEL_IMPLEMENTATIONS[model_type](**kwargs)
+                elif model_type == "generic_openai":
+                    api_key = os.getenv("GENERIC_OPENAI_API_KEY") or os.getenv("OPENROUTER_API_KEY")
+                    if not api_key:
+                        return None
+                    target_base = base_url or os.getenv("GENERIC_OPENAI_BASE_URL", "")
+                    model = self.MODEL_IMPLEMENTATIONS[model_type](api_key=api_key, model_name=model_name, base_url=target_base)
                 else:
-                    # For API-based models that need a key
                     if api_key := os.getenv(self._get_api_key_mapping()[model_type]):
                         model = self.MODEL_IMPLEMENTATIONS[model_type](api_key, model_name=model_name)
                     else:
