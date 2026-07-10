@@ -208,6 +208,15 @@
                             </div>
                         </div>
                     </div>
+                    <div class="setting-section" style="margin-top: 15px; border-top: 1px solid var(--border-color); padding-top: 15px;">
+                        <h3 class="section-title">Strategy Configuration</h3>
+                        <div class="setting-group">
+                            <label for="strategy-select">Active Strategy</label>
+                            <select id="strategy-select" class="setting-input">
+                                <!-- Populated dynamically by API -->
+                            </select>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- MODE Tab Content -->
@@ -296,6 +305,14 @@
                                 <div class="category-tokens collapsed" id="memecoins-tokens">
                                     <!-- Populated by JS -->
                                 </div>
+                            </div>
+                        </div>
+
+                        <div class="custom-token-section" style="margin-top: 15px; border-top: 1px solid var(--border-color); padding-top: 15px;">
+                            <h4 style="margin-bottom: 8px;">Add Custom Hyperliquid Token</h4>
+                            <div style="display: flex; gap: 10px;">
+                                <input type="text" id="custom-token-input" class="setting-input" placeholder="e.g., JUP, WIF, NEIRO" style="flex: 1;" />
+                                <button class="btn btn-secondary" onclick="addCustomToken()" style="padding: 0 15px;">Add Token</button>
                             </div>
                         </div>
 

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 Trading Dashboard Backend
-=========================
 Production-ready Flask app for HyperLiquid trading
 """
 
@@ -123,6 +122,16 @@ VALID_CREDENTIALS = {
     'email': os.getenv('DASHBOARD_EMAIL', ''),
     'password': os.getenv('DASHBOARD_PASSWORD', '')
 }
+
+# Securely hash password at startup to prevent plaintext memory comparison
+raw_pw = VALID_CREDENTIALS['password']
+if raw_pw:
+    if raw_pw.startswith(('pbkdf2:sha256:', 'scrypt:', 'argon2:')):
+        VALID_CREDENTIALS['password_hash'] = raw_pw
+    else:
+        VALID_CREDENTIALS['password_hash'] = generate_password_hash(raw_pw)
+else:
+    VALID_CREDENTIALS['password_hash'] = ''
 
 # Securely hash password at startup to prevent plaintext memory comparison
 raw_pw = VALID_CREDENTIALS['password']
@@ -1179,7 +1188,6 @@ def api_login():
     is_valid_password = check_password_hash(VALID_CREDENTIALS['password_hash'], password) if VALID_CREDENTIALS['password_hash'] else False
 
     if is_valid_user and is_valid_password:
-
         session['logged_in'] = True
         session['username'] = VALID_CREDENTIALS['username']
         add_console_log(f"User {VALID_CREDENTIALS['username']} logged in securely", "success")
