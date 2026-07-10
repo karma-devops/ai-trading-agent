@@ -1658,16 +1658,19 @@ async function loadHLCredentials() {
 
     try {
         const response = await fetch('/api/trading-credentials');
+        if (!response.ok) {
+            throw new Error(`Server returned ${response.status}`);
+        }
         const data = await response.json();
 
         if (data.success) {
             renderHLCredentials(data.credentials);
         } else {
-            container.innerHTML = '<div class="error-message">Failed to load HyperLiquid credentials</div>';
+            container.innerHTML = '<div class="error-message">Failed to load credentials. ' + (data.message || 'Unknown error') + '</div>';
         }
     } catch (error) {
         console.error('Error loading HL credentials:', error);
-        container.innerHTML = '<div class="error-message">Failed to load HyperLiquid credentials</div>';
+        container.innerHTML = '<div class="error-message">Could not load credentials from server. Please rebuild with latest code.</div>';
     }
 }
 
