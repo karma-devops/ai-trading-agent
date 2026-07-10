@@ -1693,6 +1693,80 @@ def get_agent_status():
         }), 500
 
 
+@app.route('/api/estop', methods=['POST'])
+@login_required
+def emergency_stop():
+    """
+    Emergency stop: halt the trading agent and optionally close all open positions.
+    Request body: {"close_positions": true|false}
+    """
+    global agent_running, stop_agent_flag
+
+    data = request.get_json(silent=True) or {}
+    close_positions = bool(data.get('close_positions', False))
+
+    # Always stop the agent first
+    stopped = False
+    with state_lock:
+        if agent_running:
+            stop_agent_flag = True
+            agent_running = False
+            stop_event.set()
+
+            state = load_agent_state()
+            state["running"] = False
+            state["last_stopped"] = datetime.now().isoformat()
+            state["estop_triggered"] = datetime.now().isoformat()
+            save_agent_state(state)
+            stopped = True
+
+    add_console_log("🛑 EMERGENCY STOP triggered", "error")
+
+    closed = []
+    failed = []
+    if close_positions:
+        try:
+            from src.agents.trading_agent import EXCHANGE
+            from src import nice_funcs_hyperliquid as n
+            from eth_account import Account
+
+            account = None
+            private_key = os.getenv("HYPER_LIQUID_ETH_PRIVATE_KEY", "")
+            if private_key:
+                account = Account.from_key(private_key)
+
+            if EXCHANGE == "HYPERLIQUID" and account:
+                user_settings = load_settings()
+                monitored_tokens = user_settings.get('monitored_tokens', [])
+                for symbol in monitored_tokens:
+                    try:
+                        pos = n.get_position(symbol, account)
+                        _, im_in_pos, pos_size, _, _, _, _ = pos
+                        if im_in_pos and float(pos_size) != 0:
+                            if n.close_complete_position(symbol, account):
+                                closed.append(symbol)
+                                add_console_log(f"🛑 E-stop closed {symbol}", "success")
+                            else:
+                                failed.append(symbol)
+                                add_console_log(f"🛑 E-stop failed to close {symbol}", "error")
+                    except Exception as e:
+                        failed.append(symbol)
+                        add_console_log(f"🛑 E-stop error closing {symbol}: {e}", "error")
+            else:
+                add_console_log("🛑 E-stop: close_positions requested but no account configured", "warning")
+        except Exception as e:
+            add_console_log(f"🛑 E-stop close_positions error: {e}", "error")
+
+    return jsonify({
+        "status": "estop_triggered",
+        "agent_stopped": stopped,
+        "close_positions_requested": close_positions,
+        "positions_closed": closed,
+        "positions_failed": failed,
+        "timestamp": datetime.now().isoformat()
+    })
+
+
 @app.route('/api/settings', methods=['GET', 'POST'])
 @login_required
 def settings():

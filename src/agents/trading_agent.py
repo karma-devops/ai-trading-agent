@@ -112,6 +112,13 @@ except ImportError:
     def get_all_tracked_positions(): return {}
     def sync_with_exchange_positions(*args, **kwargs): return (0, 0)
 
+try:
+    from src.utils.trade_logger import log_trade
+    TRADE_LOGGER_AVAILABLE = True
+except ImportError:
+    TRADE_LOGGER_AVAILABLE = False
+    def log_trade(*args, **kwargs): pass
+
 # Import three-tier close validation system
 try:
     from src.utils.close_validator import (
@@ -2358,6 +2365,21 @@ Return ONLY valid JSON with the following structure:
                             except Exception as e:
                                 cprint(f"   ⚠️ Position log error: {e}", "yellow")
 
+                            if TRADE_LOGGER_AVAILABLE:
+                                try:
+                                    log_trade(
+                                        symbol=symbol,
+                                        action="OPEN_LONG",
+                                        side="LONG",
+                                        notional_usd=notional,
+                                        margin_usd=margin_usd,
+                                        leverage=LEVERAGE,
+                                        reason=reason,
+                                        strategy=self.active_strategy
+                                    )
+                                except Exception as e:
+                                    cprint(f"   ⚠️ Trade logger error: {e}", "yellow")
+
                             executed_count += 1
                         else:
                             cprint(f"   ❌ LONG position failed to open (no result returned)", "red")
@@ -2472,6 +2494,21 @@ Return ONLY valid JSON with the following structure:
                                 log_position_open(symbol, "SHORT", notional)
                             except Exception as e:
                                 cprint(f"   ⚠️ Position log error: {e}", "yellow")
+
+                            if TRADE_LOGGER_AVAILABLE:
+                                try:
+                                    log_trade(
+                                        symbol=symbol,
+                                        action="OPEN_SHORT",
+                                        side="SHORT",
+                                        notional_usd=notional,
+                                        margin_usd=margin_usd,
+                                        leverage=LEVERAGE,
+                                        reason=reason,
+                                        strategy=self.active_strategy
+                                    )
+                                except Exception as e:
+                                    cprint(f"   ⚠️ Trade logger error: {e}", "yellow")
 
                             executed_count += 1
                         else:
