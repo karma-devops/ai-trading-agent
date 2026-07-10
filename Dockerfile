@@ -20,7 +20,7 @@
 #   docker compose up -d
 # ============================================================================
 
-FROM python:3.10-slim
+FROM python:3.12-slim
 
 # Install system dependencies needed to compile Python packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
