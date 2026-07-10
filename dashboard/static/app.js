@@ -696,6 +696,9 @@ async function loadSettings() {
             populateProviderDropdowns();
         }
 
+        // Load custom strategies list
+        await loadStrategies();
+
         // Apply settings
         if (settingsData.success) {
             applySettings(settingsData.settings);
@@ -747,6 +750,12 @@ async function validateSelectedTokens(tokens) {
 
 // Apply settings to UI
 function applySettings(settings) {
+    // Strategy setting
+    const stratSelect = document.getElementById('strategy-select');
+    if (stratSelect) {
+        stratSelect.value = settings.active_strategy || 'Simple MA Crossover';
+    }
+
     // Chart settings
     document.getElementById('timeframe-select').value = settings.timeframe || '30m';
     document.getElementById('days-back-select').value = settings.days_back || 2;
@@ -1076,6 +1085,9 @@ async function saveSettings() {
 
     // Collect settings
     const settings = {
+        // Strategy settings
+        active_strategy: document.getElementById('strategy-select') ? document.getElementById('strategy-select').value : 'Simple MA Crossover',
+
         // Chart settings
         timeframe: document.getElementById('timeframe-select').value,
         days_back: parseInt(document.getElementById('days-back-select').value),
@@ -1829,6 +1841,56 @@ async function validateSettingsForTier(settings) {
     } catch (error) {
         console.error('Error validating settings:', error);
         return { valid: true, errors: [] }; // Allow on error
+    }
+}
+
+// Load and populate strategy dropdown
+async function loadStrategies() {
+    try {
+        const res = await fetch('/api/strategies');
+        const data = await res.json();
+        if (data.success) {
+            const select = document.getElementById('strategy-select');
+            if (select) {
+                select.innerHTML = data.strategies.map(strat => `
+                    <option value="${strat}">${strat}</option>
+                `).join('');
+            }
+        }
+    } catch (e) {
+        console.error("Error loading strategies:", e);
+    }
+}
+
+// Add custom token on Hyperliquid dynamically
+async function addCustomToken() {
+    const input = document.getElementById('custom-token-input');
+    const symbol = input.value.trim().toUpperCase();
+    if (!symbol) {
+        alert("Please enter a valid token symbol");
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/tokens/add', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ symbol: symbol })
+        });
+        const data = await response.json();
+        if (data.success) {
+            input.value = '';
+            // Refresh selections
+            await loadSettings();
+            showValidationMessage(`Token ${symbol} successfully added to monitored tokens`, 'success');
+        } else {
+            alert(data.message || "Failed to add custom token");
+        }
+    } catch (e) {
+        console.error("Error adding custom token:", e);
+        alert("An error occurred while adding the token");
     }
 }
 
