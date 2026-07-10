@@ -46,8 +46,14 @@ except ImportError:
         print(f"[{level.upper()}] {message}")
 
 # ============================================================================
-# Use HyperLiquid leverage from config as the single source of truth
-from src.config import HYPERLIQUID_LEVERAGE
+# CONFIGURATION
+# ============================================================================
+DEFAULT_LEVERAGE = 20  # Change this to adjust leverage globally (1-50x on HyperLiquid)
+                      # Higher leverage = less margin required, but higher liquidation risk
+                      # Examples:
+                      # - 5x: $25 position needs $5 margin
+                      # - 10x: $25 position needs $2.50 margin
+                      # - 20x: $25 position needs $1.25 margin
 
 # Constants
 BATCH_SIZE = 5000  # MAX IS 5000 FOR HYPERLIQUID
@@ -201,9 +207,9 @@ def get_sz_px_decimals(symbol):
 
 def get_position(symbol_or_address, account=None):
     """
-    HyperLiquid-only get_position.
-    Queries the 'ACCOUNT_ADDRESS' from env for positions,
-    falling back to the signing wallet address if needed.
+    Unified get_position. 
+    CRITICAL FIX: Queries the 'ACCOUNT_ADDRESS' from env for positions,
+    even if 'account' (API Wallet) is passed for signing.
     """
     try:
         from termcolor import colored
@@ -211,81 +217,101 @@ def get_position(symbol_or_address, account=None):
         def colored(text, color): return text
 
     import os
+    
+    # 1. DETECT EXCHANGE MODE
+    is_solana_mode = len(str(symbol_or_address)) > 10
 
-    symbol = symbol_or_address
+    # ==================================================
+    # 🦁 SOLANA LOGIC (Keep as is)
+    # ==================================================
+    if is_solana_mode:
+        token_mint_address = symbol_or_address
+        # ... (Your existing Solana logic here) ...
+        # (Paste the Solana block from the previous step if needed, 
+        #  but the critical fix is below in the Hyperliquid section)
+        
+        # Placeholder for brevity if you already have the Solana part working:
+        print(f"Checking Solana {token_mint_address[:8]}...")
+        return ([], False, 0.0, token_mint_address, 0.0, 0.0, True)
 
-    # Determine which address to QUERY
-    # We must look at the MAIN Account (from .env), not the API Wallet (account.address)
-    target_address = os.getenv("ACCOUNT_ADDRESS")
+    # ==================================================
+    # 💧 HYPERLIQUID LOGIC
+    # ==================================================
+    else:
+        symbol = symbol_or_address
+        
+        # 👇 CRITICAL FIX: Determine which address to QUERY
+        # We must look at the MAIN Account (from .env), not the API Wallet (account.address)
+        target_address = os.getenv("ACCOUNT_ADDRESS")
+        
+        # Fallback if .env is missing (but warn user)
+        if not target_address and account:
+            target_address = account.address
+            print(colored("⚠️  Warning: Using API Wallet address for position check. Positions might be hidden!", "yellow"))
+            
+        print(f'{colored("Getting HYPERLIQUID position for", "cyan")} {colored(symbol, "yellow")}')
+        print(f'   {colored("🔎 Querying Address:", "cyan")} {target_address}') # Debug print
 
-    # Fallback if .env is missing (but warn user)
-    if not target_address and account:
-        target_address = account.address
-        print(colored("⚠️  Warning: Using API Wallet address for position check. Positions might be hidden!", "yellow"))
+        # Robust Imports
+        try:
+            from hyperliquid.info import Info
+            from hyperliquid.utils import constants
+        except ImportError:
+            print(colored("❌ Error: hyperliquid-python-sdk not installed", "red"))
+            return [], False, 0, symbol, 0, 0, True
 
-    print(f'{colored("Getting HYPERLIQUID position for", "cyan")} {colored(symbol, "yellow")}')
-    print(f'   {colored("🔎 Querying Address:", "cyan")} {target_address}') # Debug print
+        try:
+            # Connect
+            info = Info(constants.MAINNET_API_URL, skip_ws=True)
+            user_state = info.user_state(target_address) # 👈 Query the TARGET address
+        except Exception as e:
+            print(f'{colored("❌ Error fetching user state:", "red")} {e}')
+            return [], False, 0, symbol, 0, 0, True
 
-    # Robust Imports
-    try:
-        from hyperliquid.info import Info
-        from hyperliquid.utils import constants
-    except ImportError:
-        print(colored("❌ Error: hyperliquid-python-sdk not installed", "red"))
-        return [], False, 0, symbol, 0, 0, True
+        positions = []
+        active_coins_debug = []
 
-    try:
-        # Connect
-        info = Info(constants.MAINNET_API_URL, skip_ws=True)
-        user_state = info.user_state(target_address) # Query the TARGET address
-    except Exception as e:
-        print(f'{colored("❌ Error fetching user state:", "red")} {e}')
-        return [], False, 0, symbol, 0, 0, True
+        for position in user_state["assetPositions"]:
+            raw_pos = position["position"]
+            coin = raw_pos["coin"]
+            sz = float(raw_pos["szi"])
+            
+            if sz != 0:
+                active_coins_debug.append(coin)
 
-    positions = []
-    active_coins_debug = []
+            if coin == symbol and sz != 0:
+                positions.append(raw_pos)
+                pos_size = sz
+                entry_px = float(raw_pos["entryPx"])
+                pnl_perc = float(raw_pos["returnOnEquity"]) * 100
+                print(f'{colored(f"{coin} position:", "green")} Size: {pos_size} | Entry: ${entry_px} | PnL: {pnl_perc:.2f}%')
 
-    for position in user_state["assetPositions"]:
-        raw_pos = position["position"]
-        coin = raw_pos["coin"]
-        sz = float(raw_pos["szi"])
+        im_in_pos = len(positions) > 0
 
-        if sz != 0:
-            active_coins_debug.append(coin)
+        if not im_in_pos:
+            print(f'{colored("No position in", "yellow")} {symbol}')
+            if active_coins_debug:
+                 print(f'   {colored("ℹ️  Found these instead:", "cyan")} {active_coins_debug}')
+            return [], False, 0, symbol, 0, 0, True
 
-        if coin == symbol and sz != 0:
-            positions.append(raw_pos)
-            pos_size = sz
-            entry_px = float(raw_pos["entryPx"])
-            pnl_perc = float(raw_pos["returnOnEquity"]) * 100
-            print(f'{colored(f"{coin} position:", "green")} Size: {pos_size} | Entry: ${entry_px} | PnL: {pnl_perc:.2f}%')
+        # --- NEW: Handle multiple open subpositions individually ---
+        print(colored(f"📊 Found {len(positions)} open subposition(s) for {symbol}", "cyan"))
 
-    im_in_pos = len(positions) > 0
+        for p in positions:
+            sz = float(p["szi"])
+            entry_px = float(p["entryPx"])
+            pnl_perc = float(p["returnOnEquity"]) * 100
+            direction = "LONG" if sz > 0 else "SHORT"
+            print(colored(f"   • {direction} {abs(sz)} {symbol} @ ${entry_px:.2f} | PnL: {pnl_perc:.2f}%", "green" if pnl_perc > 0 else "red"))
 
-    if not im_in_pos:
-        print(f'{colored("No position in", "yellow")} {symbol}')
-        if active_coins_debug:
-             print(f'   {colored("ℹ️  Found these instead:", "cyan")} {active_coins_debug}')
-        return [], False, 0, symbol, 0, 0, True
+        # Return all positions, plus a summary of the first one
+        pos_size = float(positions[0]["szi"])
+        pos_sym = positions[0]["coin"]
+        entry_px = float(positions[0]["entryPx"])
+        pnl_perc = float(positions[0]["returnOnEquity"]) * 100
+        is_long = pos_size > 0
 
-    # Handle multiple open subpositions individually
-    print(colored(f"📊 Found {len(positions)} open subposition(s) for {symbol}", "cyan"))
-
-    for p in positions:
-        sz = float(p["szi"])
-        entry_px = float(p["entryPx"])
-        pnl_perc = float(p["returnOnEquity"]) * 100
-        direction = "LONG" if sz > 0 else "SHORT"
-        print(colored(f"   • {direction} {abs(sz)} {symbol} @ ${entry_px:.2f} | PnL: {pnl_perc:.2f}%", "green" if pnl_perc > 0 else "red"))
-
-    # Return all positions, plus a summary of the first one
-    pos_size = float(positions[0]["szi"])
-    pos_sym = positions[0]["coin"]
-    entry_px = float(positions[0]["entryPx"])
-    pnl_perc = float(positions[0]["returnOnEquity"]) * 100
-    is_long = pos_size > 0
-
-    return positions, im_in_pos, pos_size, pos_sym, entry_px, pnl_perc, is_long
+        return positions, im_in_pos, pos_size, pos_sym, entry_px, pnl_perc, is_long
 
 
 
@@ -1133,7 +1159,7 @@ def get_token_balance_usd(token_mint_address, account):
         cprint(f"❌ Error getting balance for {token_mint_address}: {e}", "red")
         return 0
 
-def ai_entry(symbol, amount, max_chunk_size=None, leverage=None, account=None):
+def ai_entry(symbol, amount, max_chunk_size=None, leverage=DEFAULT_LEVERAGE, account=None):
     """Smart entry (HyperLiquid doesn't need chunking)
 
     Args:
@@ -1149,17 +1175,13 @@ def ai_entry(symbol, amount, max_chunk_size=None, leverage=None, account=None):
     if account is None:
         account = _get_account_from_env()
 
-    # Default leverage from config
-    if leverage is None:
-        leverage = HYPERLIQUID_LEVERAGE
-
     # Set leverage
     set_leverage(symbol, leverage, account)
 
     result = market_buy(symbol, amount, account)
     return result is not None
 
-def open_short(token, amount, slippage=None, leverage=None, account=None):
+def open_short(token, amount, slippage=None, leverage=DEFAULT_LEVERAGE, account=None):
     """Open SHORT position explicitly
 
     Args:
@@ -1178,10 +1200,6 @@ def open_short(token, amount, slippage=None, leverage=None, account=None):
     """
     if account is None:
         account = _get_account_from_env()
-
-    # Default leverage from config
-    if leverage is None:
-        leverage = HYPERLIQUID_LEVERAGE
 
     # Validate symbol exists on Hyperliquid before attempting trade
     is_valid, symbol_info = validate_symbol(token)
