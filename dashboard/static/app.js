@@ -52,10 +52,13 @@ function startPositionStream() {
 
         positionEventSource.onmessage = (event) => {
             try {
-                const positions = JSON.parse(event.data);
-                if (!positions.error) {
-                    updatePositions(positions);
-                    console.log('[SSE] Position update received:', positions.length, 'positions');
+                const data = JSON.parse(event.data);
+                // Heartbeat — just keep connection alive, ignore
+                if (data.heartbeat) return;
+                // Position data from WebSocket push
+                if (!data.error && Array.isArray(data)) {
+                    updatePositions(data);
+                    console.log('[SSE] Position update received:', data.length, 'positions');
                 }
             } catch (e) {
                 console.error('[SSE] Parse error:', e);

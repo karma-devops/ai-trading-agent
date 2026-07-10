@@ -1077,6 +1077,7 @@ def run_trading_agent():
 
     add_console_log("Loaded trading_agent", "info")
     add_console_log(f"Using exchange {EXCHANGE}", "info")
+    add_console_log(f"DRY_RUN: {os.getenv('DRY_RUN', 'true')}", "info")
 
     # Convert minutes to seconds for sleep (use user setting)
     sleep_seconds = user_settings.get('sleep_minutes', 30) * 60
@@ -1395,77 +1396,49 @@ def hl_diagnostic():
 @app.route('/api/positions/stream')
 @login_required
 def stream_positions():
-        """SSE endpoint for real-time position updates via WebSocket"""
+        """SSE endpoint for real-time position updates. Heartbeat-only —
+        position data is fetched by frontend's updateDashboard() poll.
+        SSE is used only for WebSocket push events when available."""
         def generate():
             import queue
             import time
 
-            # Create client-specific queue for this SSE connection
             client_queue = queue.Queue()
             sse_clients.append(client_queue)
-
-            print(f"📡 New SSE client connected. Total clients: {len(sse_clients)}")
+            print(f"📡 New SSE client connected. Total: {len(sse_clients)}")
 
             try:
-                from src.websocket import is_websocket_connected
-                websocket_available = is_websocket_connected()
-
-                if websocket_available:
-                    print("📡 WebSocket available - streaming real-time updates")
-                    add_console_log("Real-time position streaming connected", "success")
-                else:
-                    print("📡 WebSocket not available - falling back to periodic polling")
-                    #add_console_log("WebSocket unavailable - API polling active", "info")  can use for DEBUG only
-
-                # Send initial positions immediately
-                try:
-                    positions = get_positions_data()
-                    positions_json = json.dumps(positions)
-                    yield f"data: {positions_json}\n\n"
-                except Exception as e:
-                    error_data = json.dumps({'error': f'Initial data error: {str(e)}'})
-                    yield f"data: {error_data}\n\n"
+                # Send initial heartbeat
+                yield f"data: {json.dumps({'heartbeat': True, 'timestamp': datetime.now().isoformat()})}\n\n"
 
                 last_heartbeat = time.time()
 
-                # Main streaming loop
                 while True:
                     try:
-                        # Check for WebSocket events in client queue
+                        # Check for WebSocket push events
                         try:
                             event_data = client_queue.get(timeout=0.1)
                             yield event_data
                         except queue.Empty:
                             pass
 
-                        # Send heartbeat every 30 seconds to keep connection alive
+                        # Heartbeat every 30s to keep connection alive
                         current_time = time.time()
                         if current_time - last_heartbeat > 30:
                             yield f"data: {json.dumps({'heartbeat': True, 'timestamp': datetime.now().isoformat()})}\n\n"
                             last_heartbeat = current_time
 
-                        # Fallback polling if WebSocket events not available
-                        if not websocket_available:
-                            positions = get_positions_data()
-                            positions_json = json.dumps(positions)
-                            yield f"data: {positions_json}\n\n"
-                            time.sleep(2)  # Poll every 2 seconds as fallback
-
                     except GeneratorExit:
                         print("📡 SSE client disconnected")
                         break
                     except Exception as e:
-                        error_msg = f"Streaming error: {str(e)}"
-                        print(f"❌ {error_msg}")
-                        error_data = json.dumps({'error': error_msg})
-                        yield f"data: {error_data}\n\n"
-                        time.sleep(5)  # Longer delay on errors
+                        print(f"❌ SSE error: {e}")
+                        time.sleep(5)
 
             finally:
-                # Clean up client connection
                 try:
                     sse_clients.remove(client_queue)
-                    print(f"📡 SSE client removed. Remaining clients: {len(sse_clients)}")
+                    print(f"📡 SSE client removed. Remaining: {len(sse_clients)}")
                 except ValueError:
                     pass
 
