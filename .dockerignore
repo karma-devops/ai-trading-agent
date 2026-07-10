@@ -35,7 +35,26 @@ data/*.sqlite3
 # Docker itself
 docker-compose.override.yml
 
-# Large generated/test data not needed at runtime
-src/data/
-trading_venv/
+# Large generated data not needed at runtime (but keep Python modules)
+src/data/rbi/
+src/data/rbi_v2/
+src/data/rbi_v3/
+src/data/rbi_pp/
+src/data/code_runner/
+src/data/stream_thumbnails/
+src/data/scrape_agent/
+src/data/scraper_agent/
+src/data/videos/
+src/data/tweets/
+src/data/realtime_clips/
+src/data/polymarket/
+src/data/polymarket_websearch/
+src/data/coingecko_results/
+src/data/giveaway_agent/
+src/data/prompt_agent/
+src/data/*.csv
+src/data/*.json
+src/data/*.db
+src/data/*.sqlite3
 *.html        # stray backtest report files
+trading_venv/
