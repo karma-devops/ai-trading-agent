@@ -5,6 +5,7 @@ Built with love by Moon Dev 🚀
 This module provides integration with locally running Ollama models.
 """
 
+import os
 import requests
 import json
 from termcolor import cprint

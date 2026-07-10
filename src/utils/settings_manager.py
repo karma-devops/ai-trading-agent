@@ -95,26 +95,21 @@ DEFAULT_SETTINGS = {
     # Token settings - Main trading tokens
     "monitored_tokens": ["BTC", "ETH", "SOL", "LTC", "AAVE", "AVAX", "HYPE"],
 
-    # Main AI Model settings - OpenRouter FREE model (best for trading)
-    # Uses official OpenRouter free models: https://openrouter.ai/collections/free-models
-    "ai_provider": "openrouter",                      # OpenRouter with FREE models
-    "ai_model": "nex-agi/deepseek-v3.1-nex-n1:free", # FREE - Best reasoning model
-    "ai_temperature": 0.5,                            # Balanced for trading decisions
-    "ai_max_tokens": 2048,                            # Sufficient for trading analysis
+    # Main AI Model settings
+    "ai_provider": "ollama",                          # Default: Ollama cloud
+    "ai_model": "kimi-k2.7-code",                     # Default model
+    "ai_base_url": "",                                # Set in UI or .env, e.g. https://ollama.com/v1
+    "ai_api_key": "",                                 # For endpoints that require a key
+    "ai_temperature": 0.5,
+    "ai_max_tokens": 2048,
 
-    # Alternative FREE models on OpenRouter:
-    # "ai_model": "xiaomi/mimo-v2-flash:free",        # Ultra-fast
-    # "ai_model": "mistralai/devstral-2512:free",     # Coding optimized
-    # "ai_model": "tngtech/deepseek-r1t2-chimera:free", # Hybrid reasoning
-    # "ai_model": "kwaipilot/kat-coder-pro-v1:free",  # Code generation
+    # Strategy settings
+    "active_strategy": "confidence_ai", # Selected strategy: confidence_ai or magic_trend_v6_pro
 
     # Swarm AI Model settings (for multi-agent mode) - MAX 6 MODELS
-    # Defaults use FREE OpenRouter models to minimize costs
     "swarm_models": [
-        {"provider": "openrouter", "model": "nex-agi/deepseek-v3.1-nex-n1:free", "temperature": 0.5, "max_tokens": 2048},
-        {"provider": "openrouter", "model": "xiaomi/mimo-v2-flash:free", "temperature": 0.5, "max_tokens": 2048},
-        {"provider": "openrouter", "model": "mistralai/devstral-2512:free", "temperature": 0.5, "max_tokens": 2048},
-        {"provider": "openrouter", "model": "tngtech/deepseek-r1t2-chimera:free", "temperature": 0.5, "max_tokens": 2048},
+        {"provider": "ollama", "model": "kimi-k2.7-code", "base_url": "", "api_key": "", "temperature": 0.5, "max_tokens": 2048},
+        {"provider": "openrouter", "model": "deepseek/deepseek-v4-0324:free", "base_url": "https://openrouter.ai/api/v1", "api_key": "", "temperature": 0.5, "max_tokens": 2048},
     ],
 
     # Timestamp
