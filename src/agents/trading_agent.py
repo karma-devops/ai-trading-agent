@@ -661,27 +661,41 @@ class TradingAgent:
                 from src.strategies.engine_v6_1 import EngineV6_1Strategy
                 self.strategy_engine = EngineV6_1Strategy()
                 cprint(f"✅ Loaded Engine v6.1 strategy", "green")
+                try: add_console_log("✅ Strategy: Engine v6.1 loaded", "info")
+                except: pass
             except Exception as e:
                 cprint(f"⚠️ Could not load Engine v6.1: {e}", "yellow")
+                try: add_console_log(f"⚠️ Engine v6.1 load failed: {e}", "warning")
+                except: pass
                 self.active_strategy = 'confidence_ai'
         elif self.active_strategy == 'engine_v1':
             try:
                 from src.strategies.engine_v1 import EngineV1Strategy
                 self.strategy_engine = EngineV1Strategy()
                 cprint(f"✅ Loaded Engine v1 (Eve Engine) strategy", "green")
+                try: add_console_log("✅ Strategy: Engine v1 loaded", "info")
+                except: pass
             except Exception as e:
                 cprint(f"⚠️ Could not load Engine v1: {e}", "yellow")
+                try: add_console_log(f"⚠️ Engine v1 load failed: {e}", "warning")
+                except: pass
                 self.active_strategy = 'confidence_ai'
         elif self.active_strategy == 'engine_v1_3':
             try:
                 from src.strategies.engine_v1_3 import EngineV1_3Strategy
                 self.strategy_engine = EngineV1_3Strategy()
                 cprint(f"✅ Loaded Engine v1.3 (Eve Engine Scalp) strategy", "green")
+                try: add_console_log("✅ Strategy: Engine v1.3 (Scalp) loaded", "info")
+                except: pass
             except Exception as e:
                 cprint(f"⚠️ Could not load Engine v1.3: {e}", "yellow")
+                try: add_console_log(f"⚠️ Engine v1.3 load failed: {e}", "warning")
+                except: pass
                 self.active_strategy = 'confidence_ai'
         else:
             cprint(f"✅ Using AI Confidence strategy (default)", "green")
+            try: add_console_log("✅ Strategy: AI Confidence (default)", "info")
+            except: pass
 
         # Store swarm mode settings (use passed values or fall back to defaults)
         self.use_swarm_mode = (swarm_mode == 'swarm') if swarm_mode is not None else DEFAULT_SWARM_MODE
@@ -690,6 +704,10 @@ class TradingAgent:
         self.account = None
         if EXCHANGE == "HYPERLIQUID":
             cprint("🔑 Initializing Hyperliquid Account...", "cyan")
+            try:
+                add_console_log("🔑 Initializing HyperLiquid account...", "info")
+            except Exception:
+                pass
             try:
                 # Standardized key lookup: secrets JSON → env → legacy
                 from src.utils.secrets_manager import load_secrets
@@ -715,6 +733,10 @@ class TradingAgent:
                     self.address = self.account.address
 
                 cprint(f"✅ Account loaded: {self.address[:8]}...{self.address[-4:]}", "green")
+                try:
+                    add_console_log(f"✅ HL account: {self.address[:8]}...{self.address[-4:]}", "success")
+                except Exception:
+                    pass
             except Exception as e:
                 cprint(f"❌ Error loading key: {e}", "red")
                 try:
@@ -752,6 +774,10 @@ class TradingAgent:
                 cprint(f"✅ Allocation model ready: {self.model.model_name}", "green")
         else:
             cprint(f"\n⚙️ Initializing Trading Agent with {self.ai_provider} model...", "cyan")
+            try:
+                add_console_log(f"⚙️ Initializing AI model {self.ai_provider}/{self.ai_model_name}...", "info")
+            except Exception:
+                pass
             self.model = model_factory.get_model(
                 self.ai_provider, self.ai_model_name,
                 base_url=self.ai_base_url, api_key=self.ai_api_key
@@ -771,6 +797,10 @@ class TradingAgent:
                 raise RuntimeError(f"Failed to initialize {self.ai_provider} model")
 
             cprint(f"✅ Using model: {self.model.model_name}", "green")
+            try:
+                add_console_log(f"✅ AI model ready: {self.model.model_name}", "success")
+            except Exception:
+                pass
 
         self.recommendations_df = pd.DataFrame(
             columns=["token", "action", "confidence", "reasoning"]
@@ -783,6 +813,8 @@ class TradingAgent:
         except Exception as e:
             self.strategy_agent = None
             cprint(f"⚠️ StrategyAgent failed to initialize: {e}", "yellow")
+            try: add_console_log(f"⚠️ StrategyAgent init failed (non-critical): {e}", "warning")
+            except: pass
 
         # Simple in-memory cache for enriched strategy contexts per token
         # token -> {'data': ..., 'expires_at': datetime}

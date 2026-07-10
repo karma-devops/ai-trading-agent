@@ -1092,6 +1092,8 @@ def run_trading_agent():
     # Convert minutes to seconds for sleep (use user setting)
     sleep_seconds = user_settings.get('sleep_minutes', 30) * 60
 
+    add_console_log("Entering main trading loop...", "info")
+
     while True:
         # Check stop condition with lock
         with state_lock:
@@ -1138,6 +1140,7 @@ def run_trading_agent():
                 agent_executing = True
 
             # Run the trading cycle (will check stop callback periodically)
+            add_console_log("🚀 Starting trading cycle...", "info")
             agent.run_trading_cycle()
 
             # Set executing flag back to False (analysis complete, entering wait phase)
