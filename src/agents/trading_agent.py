@@ -342,7 +342,7 @@ elif EXCHANGE == "HYPERLIQUID":
             cprint("🦈 Exchange: HyperLiquid (Perpetuals) - Using src module", "cyan", attrs=['bold'])
         except ImportError:
             cprint("❌ Error: nice_funcs_hyperliquid.py not found! Ensure it is in the same folder.", "red")
-            sys.exit(1)
+            raise ImportError("nice_funcs_hyperliquid not found")
             
 elif EXCHANGE == "SOLANA":
     try:
@@ -354,7 +354,7 @@ elif EXCHANGE == "SOLANA":
 else:
     cprint(f"❌ Unknown exchange: {EXCHANGE}", "red")
     cprint("Available exchanges: ASTER, HYPERLIQUID, SOLANA", "yellow")
-    sys.exit(1)
+    raise ValueError(f"Unknown exchange: {EXCHANGE}")
 
 from src.data.ohlcv_collector import collect_all_tokens
 
@@ -762,7 +762,12 @@ class TradingAgent:
                 cprint("Available models:", "yellow")
                 for model_type in model_factory._models.keys():
                     cprint(f"   - {model_type}", "yellow")
-                sys.exit(1)
+                try:
+                    add_console_log(f"❌ Failed to initialize AI model: {self.ai_provider}", "error")
+                    add_console_log("Check AI_PROVIDER, AI_MODEL, AI_BASE_URL, AI_API_KEY in settings", "warning")
+                except Exception:
+                    pass
+                raise RuntimeError(f"Failed to initialize {self.ai_provider} model")
 
             cprint(f"✅ Using model: {self.model.model_name}", "green")
 
