@@ -1,1 +1,0 @@
-ChatCompletionMessage(content='', refusal=None, role='assistant', audio=None, function_call=None, tool_calls=None, annotations=[])

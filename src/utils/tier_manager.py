@@ -136,6 +136,10 @@ def get_user_tier(username: str) -> str:
     if username in ADMIN_USERS:
         return "pro"
 
+    # If tier file doesn't exist, give everyone pro access (multi-user not launched yet)
+    if not TIER_FILE.exists():
+        return "pro"
+
     data = load_user_tiers()
     user_data = data.get("users", {}).get(username, {})
     return user_data.get("tier", "based")  # Default to "based" tier
