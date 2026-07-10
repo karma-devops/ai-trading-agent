@@ -104,7 +104,7 @@ DEFAULT_SETTINGS = {
     "ai_max_tokens": 2048,
 
     # Strategy settings
-    "active_strategy": "confidence_ai", # Selected strategy: confidence_ai or magic_trend_v6_pro
+    "active_strategy": "confidence_ai", # Selected strategy: confidence_ai or engine_v6_1
 
     # Swarm AI Model settings (for multi-agent mode) - MAX 6 MODELS
     "swarm_models": [
@@ -419,6 +419,19 @@ def validate_swarm_models(models):
     return True, None
 
 
+def validate_active_strategy(strategy):
+    """Validate active strategy selection."""
+    return strategy in ['confidence_ai', 'engine_v6_1']
+
+
+def get_available_strategies():
+    """Strategy metadata for UI."""
+    return [
+        {"id": "confidence_ai", "name": "AI Confidence (default)", "best_for": "All tokens"},
+        {"id": "engine_v6_1", "name": "Engine v6.1", "best_for": "PEPE and FARTCOIN"},
+    ]
+
+
 def validate_settings(settings):
     """Validate settings dictionary"""
     errors = []
@@ -480,5 +493,10 @@ def validate_settings(settings):
         valid, error = validate_swarm_models(settings["swarm_models"])
         if not valid:
             errors.append(error)
+
+    # Validate active_strategy
+    if "active_strategy" in settings:
+        if not validate_active_strategy(settings["active_strategy"]):
+            errors.append("active_strategy must be 'confidence_ai' or 'engine_v6_1'")
 
     return len(errors) == 0, errors

@@ -1803,7 +1803,7 @@ def get_ai_models():
         else:
             # Get all providers and their models
             all_providers = ['openrouter', 'anthropic', 'openai', 'gemini', 'deepseek', 'xai',
-                           'mistral', 'cohere', 'perplexity', 'groq']
+                           'mistral', 'cohere', 'perplexity', 'groq', 'ollama', 'ollamafreeapi', 'generic_openai']
 
             all_models = {}
             for p in all_providers:
@@ -1820,6 +1820,23 @@ def get_ai_models():
         return jsonify({
             'success': False,
             'message': f'Error: {str(e)}'
+        }), 500
+
+
+@app.route('/api/strategies', methods=['GET'])
+@login_required
+def get_strategies():
+    """List available trading strategies"""
+    try:
+        from src.utils.settings_manager import get_available_strategies
+        return jsonify({
+            'success': True,
+            'strategies': get_available_strategies()
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error loading strategies: {str(e)}'
         }), 500
 
 

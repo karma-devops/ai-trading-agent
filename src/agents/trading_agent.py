@@ -574,7 +574,7 @@ class TradingAgent:
     def __init__(self, timeframe=None, days_back=None, stop_check_callback=None,
                  symbols=None, ai_provider=None, ai_model=None,
                  ai_temperature=None, ai_max_tokens=None,
-                 swarm_mode=None, swarm_models=None):
+                 swarm_mode=None, swarm_models=None, active_strategy=None):
         """
         Initialize Trading Agent with configurable settings
 
@@ -589,6 +589,7 @@ class TradingAgent:
             ai_max_tokens (int): Max tokens for AI response. Defaults to AI_MAX_TOKENS.
             swarm_mode (str): 'single' or 'swarm'. Defaults to 'single'.
             swarm_models (list): List of swarm model configs for multi-agent consensus.
+            active_strategy (str): 'confidence_ai' (default) or 'engine_v6_1'.
         """
         # Store configurable settings as instance variables
         self.timeframe = timeframe if timeframe is not None else DATA_TIMEFRAME
@@ -600,6 +601,17 @@ class TradingAgent:
         self.ai_model_name = ai_model if ai_model is not None else AI_MODEL_NAME
         self.ai_temperature = ai_temperature if ai_temperature is not None else AI_TEMPERATURE
         self.ai_max_tokens = ai_max_tokens if ai_max_tokens is not None else AI_MAX_TOKENS
+
+        # Strategy selection
+        self.active_strategy = active_strategy if active_strategy is not None else getattr(sys.modules.get('src.config', None), 'ACTIVE_STRATEGY', 'confidence_ai')
+        self.strategy_engine = None
+        if self.active_strategy == 'engine_v6_1':
+            try:
+                from src.strategies.engine_v6_1 import EngineV6_1Strategy
+                self.strategy_engine = EngineV6_1Strategy()
+            except Exception as e:
+                cprint(f"⚠️ Could not load Engine v6.1: {e}", "yellow")
+                self.active_strategy = 'confidence_ai'
 
         # Store swarm mode settings (use passed values or fall back to defaults)
         self.use_swarm_mode = (swarm_mode == 'swarm') if swarm_mode is not None else DEFAULT_SWARM_MODE
@@ -1560,6 +1572,28 @@ Return ONLY valid JSON with the following structure:
    
 
    
+    def _compute_engine_signals(self, market_data: dict) -> dict:
+        """Generate Engine v6.1 signals from OHLCV market data."""
+        signals = {}
+        if not self.strategy_engine:
+            return signals
+        for token, data in market_data.items():
+            try:
+                df = data if isinstance(data, pd.DataFrame) else None
+                if df is None or df.empty:
+                    continue
+                # Normalize column names
+                df = df.copy()
+                df.columns = [str(c).lower().strip() for c in df.columns]
+                required = {"open", "high", "low", "close", "volume"}
+                if not required.issubset(set(df.columns)):
+                    continue
+                sig = self.strategy_engine.generate_signals(df, symbol=token)
+                signals[token] = sig
+            except Exception as e:
+                cprint(f"⚠️ Engine v6.1 failed for {token}: {e}", "yellow")
+        return signals
+
     def analyze_market_data(self, token, market_data):
         """Analyze market data using AI model (single or swarm mode)"""
         try:
@@ -2725,22 +2759,47 @@ Return ONLY valid JSON with the following structure:
 
             # STEP 5: ANALYZE TOKENS FOR NEW ENTRIES
             cprint("\n📈 Analyzing tokens for new entry opportunities...", "white", "on_blue")
-            for token, data in market_data.items():
-                if self.should_stop():
-                    add_console_log(f"ℹ️ Stop signal received - stopping analysis at {token}", "warning")
-                    return
 
-                cprint(f"\n📊 Analyzing {token}...", "white", "on_green")
-                add_console_log(f"📊 Analyzing {token}...", "info")
+            # Engine v6.1 path: generate signals directly, skip AI entry analysis
+            if self.active_strategy == 'engine_v6_1' and self.strategy_engine:
+                cprint("🚀 Engine v6.1 is active - generating technical entry signals", "magenta", attrs=["bold"])
+                engine_signals = self._compute_engine_signals(market_data)
+                for token, sig in engine_signals.items():
+                    if sig["direction"] in ("BUY", "SELL"):
+                        self.recommendations_df = pd.concat(
+                            [
+                                self.recommendations_df,
+                                pd.DataFrame(
+                                    [
+                                        {
+                                            "token": token,
+                                            "action": sig["direction"],
+                                            "confidence": int(sig["signal"] * 100),
+                                            "reasoning": f"Engine v6.1 | ADX={sig['metadata']['adx']} | fast={sig['metadata']['fast_ema']} medm={sig['metadata']['medm_ema']} slow={sig['metadata']['slow_sma']}",
+                                        }
+                                    ]
+                                ),
+                            ],
+                            ignore_index=True,
+                        )
+                        add_console_log(f"Engine v6.1 {token} -> {sig['direction']} | {int(sig['signal'] * 100)}%", "success")
+            else:
+                for token, data in market_data.items():
+                    if self.should_stop():
+                        add_console_log(f"ℹ️ Stop signal received - stopping analysis at {token}", "warning")
+                        return
 
-                if strategy_signals and token in strategy_signals:
-                    data["strategy_signals"] = strategy_signals[token]
+                    cprint(f"\n📊 Analyzing {token}...", "white", "on_green")
+                    add_console_log(f"📊 Analyzing {token}...", "info")
 
-                analysis = self.analyze_market_data(token, data)
-                if analysis:
-                    print(f"\n📈 Analysis for {token}:")
-                    print(analysis)
-                    print("\n" + "=" * 50 + "\n")
+                    if strategy_signals and token in strategy_signals:
+                        data["strategy_signals"] = strategy_signals[token]
+
+                    analysis = self.analyze_market_data(token, data)
+                    if analysis:
+                        print(f"\n📈 Analysis for {token}:")
+                        print(analysis)
+                        print("\n" + "=" * 50 + "\n")
 
             if self.should_stop():
                 add_console_log("ℹ️ Stop signal received - aborting cycle", "warning")
