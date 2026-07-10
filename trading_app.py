@@ -1298,6 +1298,80 @@ def get_data():
         }), 500
 
 
+@app.route('/api/hl-diagnostic')
+@login_required
+def hl_diagnostic():
+    """Diagnostic endpoint to debug HyperLiquid connection"""
+    try:
+        from src.utils.secrets_manager import load_secrets
+        secrets = load_secrets()
+        trading_keys = secrets.get("trading_keys", {})
+
+        result = {
+            "exchange_connected": EXCHANGE_CONNECTED,
+            "credentials_source": {},
+            "env_vars": {},
+            "hl_api_test": {},
+        }
+
+        # Show what credentials are available (masked)
+        pk = trading_keys.get("hyperliquid_private_key", "")
+        wa = trading_keys.get("hyperliquid_wallet_address", "")
+        result["credentials_source"]["secrets_json_private_key"] = f"{pk[:6]}...{pk[-4:]}" if len(pk) > 10 else ("set" if pk else "not set")
+        result["credentials_source"]["secrets_json_wallet_address"] = f"{wa[:6]}...{wa[-4:]}" if len(wa) > 10 else ("set" if wa else "not set")
+
+        env_pk = os.getenv("HYPER_LIQUID_ETH_PRIVATE_KEY", "")
+        env_wa = os.getenv("ACCOUNT_ADDRESS", "")
+        env_legacy = os.getenv("HYPER_LIQUID_KEY", "")
+        result["env_vars"]["HYPER_LIQUID_ETH_PRIVATE_KEY"] = f"{env_pk[:6]}...{env_pk[-4:]}" if len(env_pk) > 10 else ("set" if env_pk else "not set")
+        result["env_vars"]["ACCOUNT_ADDRESS"] = f"{env_wa[:6]}...{env_wa[-4:]}" if len(env_wa) > 10 else ("set" if env_wa else "not set")
+        result["env_vars"]["HYPER_LIQUID_KEY"] = f"{env_legacy[:6]}...{env_legacy[-4:]}" if len(env_legacy) > 10 else ("set" if env_legacy else "not set")
+
+        # Try to resolve the actual key and address being used
+        try:
+            pk_resolved = _get_hl_private_key()
+            result["resolved_private_key"] = f"{pk_resolved[:6]}...{pk_resolved[-4:]}" if len(pk_resolved) > 10 else "not found"
+        except Exception as e:
+            result["resolved_private_key"] = f"error: {e}"
+
+        try:
+            from eth_account import Account
+            if pk_resolved:
+                account = Account.from_key(pk_resolved)
+                result["signing_address"] = account.address
+            else:
+                result["signing_address"] = "no key"
+        except Exception as e:
+            result["signing_address"] = f"error: {e}"
+
+        # Test HL API call directly
+        try:
+            from hyperliquid.info import Info
+            from hyperliquid.utils import constants
+            info = Info(constants.MAINNET_API_URL, skip_ws=True)
+
+            # Try with wallet address from secrets/env
+            query_addr = wa or env_wa or (account.address if pk_resolved else "")
+            result["hl_api_test"]["query_address"] = f"{query_addr[:6]}...{query_addr[-4:]}" if len(query_addr) > 10 else query_addr
+
+            if query_addr:
+                user_state = info.user_state(query_addr)
+                result["hl_api_test"]["success"] = True
+                result["hl_api_test"]["margin_summary"] = user_state.get("marginSummary", {})
+                result["hl_api_test"]["withdrawable"] = user_state.get("withdrawable", "0")
+                result["hl_api_test"]["asset_positions_count"] = len(user_state.get("assetPositions", []))
+            else:
+                result["hl_api_test"]["success"] = False
+                result["hl_api_test"]["error"] = "No wallet address available"
+        except Exception as e:
+            result["hl_api_test"]["success"] = False
+            result["hl_api_test"]["error"] = str(e)
+
+        return jsonify({"success": True, "diagnostic": result})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route('/api/positions/stream')
 @login_required
 def stream_positions():
