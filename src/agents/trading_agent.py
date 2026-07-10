@@ -2962,31 +2962,105 @@ Return ONLY valid JSON with the following structure:
             # STEP 5: ANALYZE TOKENS FOR NEW ENTRIES
             cprint("\n📈 Analyzing tokens for new entry opportunities...", "white", "on_blue")
 
-            # Engine v6.1 path: generate signals directly, skip AI entry analysis
+            # Engine path: generate technical signals, then AI confirms high-confidence ones
             if self.active_strategy in ('engine_v6_1', 'engine_v1', 'engine_v1_3') and self.strategy_engine:
                 add_console_log(f"🚀 {self.active_strategy} generating technical signals", "info")
                 engine_signals = self._compute_engine_signals(market_data)
                 signal_count = sum(1 for s in engine_signals.values() if s["direction"] in ("BUY", "SELL"))
                 add_console_log(f"  {len(engine_signals)} tokens analyzed, {signal_count} signals generated", "info")
+
                 for token, sig in engine_signals.items():
                     if sig["direction"] in ("BUY", "SELL"):
-                        self.recommendations_df = pd.concat(
-                            [
-                                self.recommendations_df,
-                                pd.DataFrame(
-                                    [
-                                        {
+                        confidence = int(sig["signal"] * 100)
+                        reasoning = f"{self.active_strategy} | ADX={sig['metadata']['adx']} | fast={sig['metadata']['fast_ema']} medm={sig['metadata']['medm_ema']} slow={sig['metadata']['slow_sma']}"
+
+                        # High confidence (>90%) → AI confirmation
+                        if confidence >= 90 and self.model:
+                            add_console_log(f"  {token}: {sig['direction']} {confidence}% — sending to AI for confirmation", "info")
+                            try:
+                                ai_prompt = f"""You are a trading confirmation system. A technical strategy engine has generated a signal:
+
+Token: {token}
+Direction: {sig['direction']}
+Confidence: {confidence}%
+Strategy: {self.active_strategy}
+Indicators: ADX={sig['metadata']['adx']}, EMA fast={sig['metadata']['fast_ema']}, EMA med={sig['metadata']['medm_ema']}, SMA slow={sig['metadata']['slow_sma']}
+
+Current market data is available. Based on the technical indicators, should this trade be executed?
+
+Reply in JSON: {{"confirm": true/false, "confidence": 0-100, "reason": "brief explanation"}}"""
+
+                                ai_resp = self.model.generate_response(
+                                    system_prompt="You are a trading confirmation AI. Analyze technical signals and confirm or reject trades. Always reply in JSON.",
+                                    user_content=ai_prompt,
+                                    temperature=0.3,
+                                    max_tokens=200
+                                )
+
+                                ai_text = getattr(ai_resp, 'content', '') if ai_resp else ''
+
+                                # Parse AI response
+                                import json as _json
+                                try:
+                                    # Extract JSON from response
+                                    if '```json' in ai_text:
+                                        ai_text = ai_text.split('```json')[1].split('```')[0].strip()
+                                    elif '```' in ai_text:
+                                        ai_text = ai_text.split('```')[1].split('```')[0].strip()
+                                    ai_decision = _json.loads(ai_text)
+                                    ai_confirm = ai_decision.get('confirm', False)
+                                    ai_confidence = ai_decision.get('confidence', 0)
+                                    ai_reason = ai_decision.get('reason', '')
+                                except Exception:
+                                    # If AI response can't be parsed, fall back to engine signal
+                                    ai_confirm = True
+                                    ai_confidence = confidence
+                                    ai_reason = "AI parse failed, using engine signal"
+
+                                if ai_confirm:
+                                    final_confidence = max(confidence, ai_confidence)
+                                    self.recommendations_df = pd.concat([
+                                        self.recommendations_df,
+                                        pd.DataFrame([{
                                             "token": token,
                                             "action": sig["direction"],
-                                            "confidence": int(sig["signal"] * 100),
-                                            "reasoning": f"{self.active_strategy} | ADX={sig['metadata']['adx']} | fast={sig['metadata']['fast_ema']} medm={sig['metadata']['medm_ema']} slow={sig['metadata']['slow_sma']}",
-                                        }
-                                    ]
-                                ),
-                            ],
-                            ignore_index=True,
-                        )
-                        add_console_log(f"{self.active_strategy} {token} -> {sig['direction']} | {int(sig['signal'] * 100)}%", "success")
+                                            "confidence": final_confidence,
+                                            "reasoning": f"{reasoning} | AI: {ai_reason}",
+                                        }]),
+                                    ], ignore_index=True)
+                                    add_console_log(f"  ✅ {token}: {sig['direction']} confirmed by AI ({ai_confidence}%) — {ai_reason[:60]}", "success")
+                                else:
+                                    add_console_log(f"  ❌ {token}: AI rejected {sig['direction']} — {ai_reason[:60]}", "warning")
+
+                            except Exception as ai_err:
+                                # AI confirmation failed — fall back to engine signal
+                                add_console_log(f"  ⚠️ AI confirmation error for {token}, using engine signal: {ai_err}", "warning")
+                                self.recommendations_df = pd.concat([
+                                    self.recommendations_df,
+                                    pd.DataFrame([{
+                                        "token": token,
+                                        "action": sig["direction"],
+                                        "confidence": confidence,
+                                        "reasoning": reasoning,
+                                    }]),
+                                ], ignore_index=True)
+                                add_console_log(f"  {self.active_strategy} {token} -> {sig['direction']} | {confidence}%", "success")
+
+                        else:
+                            # Confidence < 90% or no AI model — use engine signal directly
+                            self.recommendations_df = pd.concat([
+                                self.recommendations_df,
+                                pd.DataFrame([{
+                                    "token": token,
+                                    "action": sig["direction"],
+                                    "confidence": confidence,
+                                    "reasoning": reasoning,
+                                }]),
+                            ], ignore_index=True)
+                            if confidence >= 90:
+                                add_console_log(f"  {token}: {sig['direction']} {confidence}% (no AI model — executing on engine signal)", "success")
+                            else:
+                                add_console_log(f"  {token}: {sig['direction']} {confidence}% (below 90% threshold — no AI confirmation needed)", "info")
             else:
                 for token, data in market_data.items():
                     if self.should_stop():
