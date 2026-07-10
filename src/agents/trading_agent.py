@@ -716,7 +716,11 @@ class TradingAgent:
                 cprint(f"✅ Account loaded: {self.address[:8]}...{self.address[-4:]}", "green")
             except Exception as e:
                 cprint(f"❌ Error loading key: {e}", "red")
-                sys.exit(1)
+                try:
+                    add_console_log(f"❌ Error loading HyperLiquid key: {e}", "error")
+                except Exception:
+                    pass
+                return  # Don't sys.exit — that kills the thread silently
 
         # Check if using swarm mode or single model
         if self.use_swarm_mode:
