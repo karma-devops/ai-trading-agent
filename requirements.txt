@@ -37,6 +37,7 @@ google-generativeai==0.8.6
 numpy>=2.2.6
 pandas==2.3.3
 pandas-ta==0.4.71b0
+matplotlib-inline==0.2.1
 python-dateutil==2.9.0.post0
 pytz==2025.2
 tzdata==2025.3

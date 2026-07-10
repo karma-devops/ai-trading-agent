@@ -2333,3 +2333,27 @@ animation-duration: 1.8s;
 .agent-badge.standby ~ .logo .pulse-line {
 animation-duration: 3.8s;
 }
+
+.token-search-results {
+    margin-top: 8px;
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: rgba(20, 20, 20, 0.8);
+}
+.token-search-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border-color);
+    transition: background 0.15s;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.token-search-item:hover {
+    background: rgba(30, 30, 30, 0.9);
+}
+.token-search-item:last-child {
+    border-bottom: none;
+}

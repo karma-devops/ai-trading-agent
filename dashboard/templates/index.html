@@ -251,15 +251,16 @@
                 <div id="tab-token" class="settings-tab-content">
                     <div class="setting-section">
                         <h3 class="section-title">Token Selection</h3>
-                        <p class="section-desc">Select tokens to monitor from Hyperliquid exchange, or add a custom symbol</p>
+                        <p class="section-desc">Search and select tokens available on HyperLiquid</p>
 
-                        <div class="setting-group custom-token-group">
-                            <label for="custom-token-input">Add Custom Token</label>
+                        <div class="setting-group">
+                            <label for="token-search-input">Search HyperLiquid Tokens</label>
                             <div class="custom-token-row">
-                                <input type="text" id="custom-token-input" class="setting-input" placeholder="e.g. PEPE, FARTCOIN" />
-                                <button class="btn-add-token" onclick="addCustomToken()">Add</button>
+                                <input type="text" id="token-search-input" class="setting-input" placeholder="Type to search (e.g. BTC, PEPE, FART)..." oninput="filterTokens()" />
+                                <button class="btn-add-token" onclick="refreshLiveTokens()">↻ Live</button>
                             </div>
-                            <span class="input-hint">Custom symbols must exist on HyperLiquid. Invalid symbols are marked after save.</span>
+                            <div id="token-search-results" class="token-search-results" style="display: none;"></div>
+                            <span class="input-hint" id="token-source-hint">Showing static list. Click ↻ Live to fetch from HyperLiquid.</span>
                         </div>
 
                         <div class="token-categories">
@@ -303,19 +304,10 @@
                             </div>
                         </div>
 
-                        <div class="custom-token-section" style="margin-top: 15px; border-top: 1px solid var(--border-color); padding-top: 15px;">
-                            <h4 style="margin-bottom: 8px;">Add Custom Hyperliquid Token</h4>
-                            <div style="display: flex; gap: 10px;">
-                                <input type="text" id="custom-token-input" class="setting-input" placeholder="e.g., JUP, WIF, NEIRO" style="flex: 1;" />
-                                <button class="btn btn-secondary" onclick="addCustomToken()" style="padding: 0 15px;">Add Token</button>
-                            </div>
-                        </div>
-
-                        <div class="selected-tokens-summary">
-                            <span class="summary-label">Selected:</span>
-                            <div class="selected-tokens-list" id="selected-tokens-list">
-                                <!-- Populated by JS -->
-                            </div>
+                        <!-- Selected tokens summary -->
+                        <div class="setting-section" style="margin-top: 15px; border-top: 1px solid var(--border-color); padding-top: 15px;">
+                            <h4>Selected Tokens</h4>
+                            <div id="selected-tokens-list" style="display: flex; flex-wrap: wrap; gap: 8px;"></div>
                         </div>
                     </div>
                 </div>

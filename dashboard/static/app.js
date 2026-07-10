@@ -905,29 +905,90 @@ function removeToken(symbol) {
     }
 }
 
-// Add a custom token symbol from free-text input
-function addCustomToken() {
-    const input = document.getElementById('custom-token-input');
-    const raw = input.value.trim().toUpperCase();
-    if (!raw) return;
+// Live token list from HyperLiquid (all symbols)
+let liveTokenList = [];
+let liveTokensLoaded = false;
 
-    // Allow comma-separated or space-separated entries
-    const symbols = raw.split(/[,\s]+/).filter(s => s.length > 0);
-    let added = 0;
-    symbols.forEach(symbol => {
-        if (!selectedTokens.includes(symbol)) {
-            selectedTokens.push(symbol);
-            added++;
-        }
-    });
+// Search/filter tokens as user types
+function filterTokens() {
+    const query = document.getElementById('token-search-input').value.trim().toUpperCase();
+    const resultsDiv = document.getElementById('token-search-results');
 
-    if (added > 0) {
-        updateTokenSelection();
-        showValidationMessage(`Added ${added} custom token(s)`, 'success');
-    } else {
-        showValidationMessage('Token(s) already selected', 'info');
+    if (!query || query.length < 1) {
+        resultsDiv.style.display = 'none';
+        return;
     }
-    input.value = '';
+
+    // Search from live list if loaded, otherwise from static availableTokens
+    let searchPool = [];
+    if (liveTokensLoaded && liveTokenList.length > 0) {
+        searchPool = liveTokenList;
+    } else {
+        // Flatten static tokens
+        Object.values(availableTokens).forEach(cat => {
+            cat.forEach(t => searchPool.push(t.symbol));
+        });
+    }
+
+    const matches = searchPool.filter(s => s.includes(query)).slice(0, 20);
+
+    if (matches.length > 0) {
+        resultsDiv.innerHTML = matches.map(sym => `
+            <div class="token-search-item" onclick="selectTokenFromSearch('${sym}')">
+                ${sym}
+                ${selectedTokens.includes(sym) ? '<span style="color: var(--eve-cyan, #00f5d4); font-size: 10px;">✓ selected</span>' : '<span style="color: var(--text-muted); font-size: 10px;">click to add</span>'}
+            </div>
+        `).join('');
+        resultsDiv.style.display = 'block';
+    } else {
+        resultsDiv.innerHTML = `<div class="token-search-item" style="color: var(--text-muted);">No tokens found for "${query}"</div>`;
+        resultsDiv.style.display = 'block';
+    }
+}
+
+function selectTokenFromSearch(symbol) {
+    if (!selectedTokens.includes(symbol)) {
+        selectedTokens.push(symbol);
+        updateTokenSelection();
+        showValidationMessage(`Added ${symbol}`, 'success');
+    }
+    document.getElementById('token-search-input').value = '';
+    document.getElementById('token-search-results').style.display = 'none';
+}
+
+// Fetch live tokens from HyperLiquid API
+async function refreshLiveTokens() {
+    const btn = document.querySelector('.btn-add-token');
+    const hint = document.getElementById('token-source-hint');
+    if (btn) btn.textContent = 'Loading...';
+    if (hint) hint.textContent = 'Fetching tokens from HyperLiquid...';
+
+    try {
+        const response = await fetch('/api/tokens?live=true');
+        const data = await response.json();
+
+        if (data.success && data.all_symbols) {
+            liveTokenList = data.all_symbols;
+            liveTokensLoaded = true;
+
+            // Also update availableTokens with live categories if provided
+            if (data.categories) {
+                availableTokens = data.categories;
+                renderTokenChips();
+                updateTokenSelection();
+            }
+
+            if (hint) hint.textContent = `${liveTokenList.length} tokens loaded from HyperLiquid ✓`;
+            if (btn) btn.textContent = '↻ Refresh';
+        } else {
+            if (hint) hint.textContent = 'Failed to load live tokens, using static list';
+            if (btn) btn.textContent = '↻ Live';
+        }
+    } catch (error) {
+        console.error('Error fetching live tokens:', error);
+        if (hint) hint.textContent = 'Error fetching live tokens, using static list';
+        if (btn) btn.textContent = '↻ Live';
+    }
 }
 
 // Update token selection UI
@@ -2190,36 +2251,6 @@ async function loadStrategies() {
     }
 }
 
-// Add custom token on Hyperliquid dynamically
-async function addCustomToken() {
-    const input = document.getElementById('custom-token-input');
-    const symbol = input.value.trim().toUpperCase();
-    if (!symbol) {
-        alert("Please enter a valid token symbol");
-        return;
-    }
-
-    try {
-        const response = await fetch('/api/tokens/add', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ symbol: symbol })
-        });
-        const data = await response.json();
-        if (data.success) {
-            input.value = '';
-            // Refresh selections
-            await loadSettings();
-            showValidationMessage(`Token ${symbol} successfully added to monitored tokens`, 'success');
-        } else {
-            alert(data.message || "Failed to add custom token");
-        }
-    } catch (e) {
-        console.error("Error adding custom token:", e);
-        alert("An error occurred while adding the token");
-    }
-}
+// Token search and live fetch are handled by filterTokens() and refreshLiveTokens() above.
 
 console.log('✅ Dashboard ready');
