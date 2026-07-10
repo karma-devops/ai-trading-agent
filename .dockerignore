@@ -1,0 +1,41 @@
+# Prevent these from being packaged into the Docker image
+# when you download the repo as a zip and upload to EasyPanel.
+
+# Local Python environment
+venv/
+.venv/
+env/
+
+# Secrets
+.env
+.env.local
+*.key
+*.pem
+
+# Git
+.git/
+.gitignore
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Logs and temp data (will be mounted as volumes)
+logs/
+temp_data/
+data/*.db
+data/*.sqlite3
+
+# Docker itself
+docker-compose.override.yml
+
+# Large generated/test data not needed at runtime
+src/data/
+trading_venv/
+*.html        # stray backtest report files

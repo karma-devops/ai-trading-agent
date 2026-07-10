@@ -1,10 +1,41 @@
 {
-  "timeframe": "5m",
+  "timeframe": "1h",
   "days_back": 1,
   "sleep_minutes": 5,
+  "swarm_mode": "single",
+  "monitored_tokens": [
+    "BTC",
+    "ETH",
+    "SOL",
+    "LTC",
+    "AAVE",
+    "AVAX",
+    "HYPE"
+  ],
   "ai_provider": "gemini",
   "ai_model": "gemini-2.5-flash",
+  "ai_base_url": "",
+  "ai_api_key": "",
   "ai_temperature": 0.3,
   "ai_max_tokens": 2000,
-  "last_updated": "2025-12-31T10:06:01.116005"
+  "active_strategy": "confidence_ai",
+  "swarm_models": [
+    {
+      "provider": "ollama",
+      "model": "kimi-k2.7-code",
+      "base_url": "",
+      "api_key": "",
+      "temperature": 0.5,
+      "max_tokens": 2048
+    },
+    {
+      "provider": "openrouter",
+      "model": "deepseek/deepseek-v4-0324:free",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key": "",
+      "temperature": 0.5,
+      "max_tokens": 2048
+    }
+  ],
+  "last_updated": "2026-07-10T09:07:14.365416"
 }

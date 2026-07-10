@@ -26,15 +26,47 @@ import re
 
 
 def extract_json_from_text(text):
-    """Safely extract JSON object from AI model responses containing text."""
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    if match:
+    """Safely extract the first valid JSON object or array from AI model responses containing text."""
+    if not text:
+        print("⚠️ Empty AI response.")
+        return None
+
+    # Try a clean fenced code block first
+    fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", text, re.DOTALL)
+    if fence_match:
+        candidate = fence_match.group(1).strip()
         try:
-            return json.loads(match.group())
+            return json.loads(candidate)
         except json.JSONDecodeError:
-            print("⚠️ JSON extraction failed even after matching braces.")
-            return None
-    print("⚠️ No JSON object found in AI response.")
+            pass  # fall through to brace search
+
+    # Find the first balanced JSON object or array by scanning brace pairs
+    for start_char, end_char in ("{", "}"), ("[", "]"):
+        depth = 0
+        start_idx = None
+        for i, ch in enumerate(text):
+            if ch == start_char:
+                if depth == 0:
+                    start_idx = i
+                depth += 1
+            elif ch == end_char:
+                if depth > 0:
+                    depth -= 1
+                    if depth == 0 and start_idx is not None:
+                        candidate = text[start_idx:i+1]
+                        try:
+                            return json.loads(candidate)
+                        except json.JSONDecodeError:
+                            continue
+        # If we get here with leftover depth, try the longest match anyway
+        if start_idx is not None and depth > 0:
+            candidate = text[start_idx:]
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError:
+                pass
+
+    print("⚠️ No valid JSON object found in AI response.")
     return None
 
 
@@ -79,6 +111,13 @@ except ImportError:
     def get_position_age_hours(*args, **kwargs): return 0.0
     def get_all_tracked_positions(): return {}
     def sync_with_exchange_positions(*args, **kwargs): return (0, 0)
+
+try:
+    from src.utils.trade_logger import log_trade
+    TRADE_LOGGER_AVAILABLE = True
+except ImportError:
+    TRADE_LOGGER_AVAILABLE = False
+    def log_trade(*args, **kwargs): pass
 
 # Import three-tier close validation system
 try:
@@ -193,7 +232,7 @@ except Exception as e:
 # 🔧 TRADING AGENT CONFIGURATION
 # ============================================================================
 from eth_account import Account
-from src.config import EXCHANGE as CONFIG_EXCHANGE
+from src.config import EXCHANGE as CONFIG_EXCHANGE, HYPERLIQUID_LEVERAGE, MAX_POSITION_PCT, get_position_size_usd, DRY_RUN
 
 # 🦈 EXCHANGE SELECTION - Import from config.py
 # Convert to uppercase for consistency with checks throughout this file
@@ -232,9 +271,9 @@ AI_TEMPERATURE = 0.6   # Official recommended "sweet spot"
 AI_MAX_TOKENS = 8024   # Increased for multi-step reasoning
 
 # 💰 POSITION SIZING & RISK MANAGEMENT
-USE_PORTFOLIO_ALLOCATION = True 
-MAX_POSITION_PERCENTAGE = 90      
-LEVERAGE = 20                     
+USE_PORTFOLIO_ALLOCATION = True
+MAX_POSITION_PERCENTAGE = int(MAX_POSITION_PCT * 100)
+LEVERAGE = HYPERLIQUID_LEVERAGE
 
 # Stop Loss & Take Profit
 STOP_LOSS_PERCENTAGE = 2.0      # SL @ -2% PnL
@@ -574,7 +613,8 @@ class TradingAgent:
     def __init__(self, timeframe=None, days_back=None, stop_check_callback=None,
                  symbols=None, ai_provider=None, ai_model=None,
                  ai_temperature=None, ai_max_tokens=None,
-                 swarm_mode=None, swarm_models=None):
+                 ai_base_url=None, ai_api_key=None,
+                 swarm_mode=None, swarm_models=None, active_strategy=None):
         """
         Initialize Trading Agent with configurable settings
 
@@ -589,7 +629,16 @@ class TradingAgent:
             ai_max_tokens (int): Max tokens for AI response. Defaults to AI_MAX_TOKENS.
             swarm_mode (str): 'single' or 'swarm'. Defaults to 'single'.
             swarm_models (list): List of swarm model configs for multi-agent consensus.
+            active_strategy (str): 'confidence_ai' (default) or 'engine_v6_1'.
+            ai_base_url (str): Optional endpoint URL for Ollama/generic_openai.
+            ai_api_key (str): Optional API key for Ollama/generic_openai.
         """
+        # Store symbols to analyze (use passed values or fall back to config)
+        if symbols is not None:
+            self.symbols = symbols
+        else:
+            self.symbols = SYMBOLS
+
         # Store configurable settings as instance variables
         self.timeframe = timeframe if timeframe is not None else DATA_TIMEFRAME
         self.days_back = days_back if days_back is not None else DAYSBACK_4_DATA
@@ -600,18 +649,23 @@ class TradingAgent:
         self.ai_model_name = ai_model if ai_model is not None else AI_MODEL_NAME
         self.ai_temperature = ai_temperature if ai_temperature is not None else AI_TEMPERATURE
         self.ai_max_tokens = ai_max_tokens if ai_max_tokens is not None else AI_MAX_TOKENS
+        self.ai_base_url = ai_base_url if ai_base_url is not None else getattr(sys.modules.get('src.config', None), 'AI_BASE_URL', '')
+        self.ai_api_key = ai_api_key if ai_api_key is not None else getattr(sys.modules.get('src.config', None), 'AI_API_KEY', '')
+
+        # Strategy selection
+        self.active_strategy = active_strategy if active_strategy is not None else getattr(sys.modules.get('src.config', None), 'ACTIVE_STRATEGY', 'confidence_ai')
+        self.strategy_engine = None
+        if self.active_strategy == 'engine_v6_1':
+            try:
+                from src.strategies.engine_v6_1 import EngineV6_1Strategy
+                self.strategy_engine = EngineV6_1Strategy()
+            except Exception as e:
+                cprint(f"⚠️ Could not load Engine v6.1: {e}", "yellow")
+                self.active_strategy = 'confidence_ai'
 
         # Store swarm mode settings (use passed values or fall back to defaults)
         self.use_swarm_mode = (swarm_mode == 'swarm') if swarm_mode is not None else DEFAULT_SWARM_MODE
         self.swarm_models_config = swarm_models or []
-
-        # Store symbols to analyze (use passed values or fall back to config)
-        if symbols is not None:
-            self.symbols = symbols
-        elif EXCHANGE in ["ASTER", "HYPERLIQUID"]:
-            self.symbols = SYMBOLS
-        else:
-            self.symbols = MONITORED_TOKENS
 
         self.account = None
         if EXCHANGE == "HYPERLIQUID":
@@ -656,12 +710,18 @@ class TradingAgent:
                 cprint("✅ Swarm mode initialized with default AI models!", "green")
 
             cprint("💼 Initializing fast model for portfolio calculations...", "cyan")
-            self.model = model_factory.get_model(self.ai_provider, self.ai_model_name)
+            self.model = model_factory.get_model(
+                self.ai_provider, self.ai_model_name,
+                base_url=self.ai_base_url, api_key=self.ai_api_key
+            )
             if self.model:
                 cprint(f"✅ Allocation model ready: {self.model.model_name}", "green")
         else:
             cprint(f"\n⚙️ Initializing Trading Agent with {self.ai_provider} model...", "cyan")
-            self.model = model_factory.get_model(self.ai_provider, self.ai_model_name)
+            self.model = model_factory.get_model(
+                self.ai_provider, self.ai_model_name,
+                base_url=self.ai_base_url, api_key=self.ai_api_key
+            )
             self.swarm = None
 
             if not self.model:
@@ -1560,6 +1620,28 @@ Return ONLY valid JSON with the following structure:
    
 
    
+    def _compute_engine_signals(self, market_data: dict) -> dict:
+        """Generate Engine v6.1 signals from OHLCV market data."""
+        signals = {}
+        if not self.strategy_engine:
+            return signals
+        for token, data in market_data.items():
+            try:
+                df = data if isinstance(data, pd.DataFrame) else None
+                if df is None or df.empty:
+                    continue
+                # Normalize column names
+                df = df.copy()
+                df.columns = [str(c).lower().strip() for c in df.columns]
+                required = {"open", "high", "low", "close", "volume"}
+                if not required.issubset(set(df.columns)):
+                    continue
+                sig = self.strategy_engine.generate_signals(df, symbol=token)
+                signals[token] = sig
+            except Exception as e:
+                cprint(f"⚠️ Engine v6.1 failed for {token}: {e}", "yellow")
+        return signals
+
     def analyze_market_data(self, token, market_data):
         """Analyze market data using AI model (single or swarm mode)"""
         try:
@@ -2058,6 +2140,15 @@ Return ONLY valid JSON with the following structure:
 
         return actions
 
+    def _get_account_balance(self):
+        """Fetch current withdrawable USDC balance from HyperLiquid."""
+        try:
+            if EXCHANGE == "HYPERLIQUID" and self.account:
+                return n.get_balance(self.account)
+        except Exception as e:
+            cprint(f"⚠️ Could not read account balance: {e}", "yellow")
+        return 0.0
+
     def execute_allocations(self, actions_list):
         """
         Execute the AI-generated allocation plan.
@@ -2183,20 +2274,33 @@ Return ONLY valid JSON with the following structure:
 
                         notional = margin_usd * LEVERAGE
 
+                        # Balance-aware sizing: cap at max position size
+                        balance = self._get_account_balance()
+                        if balance > 0:
+                            max_notional = get_position_size_usd(balance)
+                            if notional > max_notional:
+                                cprint(f"   🛡️ Capping {symbol} notional: ${notional:.2f} → ${max_notional:.2f} (92% of ${balance:.2f} balance)", "yellow")
+                                notional = max_notional
+                                margin_usd = notional / LEVERAGE
+
                         # CRITICAL FIX: Handle position conflicts more efficiently
                         if im_in_pos and not is_long:
                             # Opposite position exists - allocate in opposite direction instead of closing first
                             cprint(f"   🔄 Opposite position detected - allocating in opposite direction", "cyan")
-                            
+
                             # For HyperLiquid, we can directly open opposite position which will net against existing
                             if EXCHANGE == "HYPERLIQUID":
                                 cprint(f"   📈 Opening LONG to net against existing SHORT", "cyan")
-                                result = n.ai_entry(symbol, notional, leverage=LEVERAGE, account=self.account)
-                                
+                                if DRY_RUN:
+                                    cprint(f"   🧪 DRY_RUN: would open LONG {symbol} ${notional:.2f}", "magenta")
+                                    result = {"status": "dry_run", "symbol": symbol, "notional": notional}
+                                else:
+                                    result = n.ai_entry(symbol, notional, leverage=LEVERAGE, account=self.account)
+
                                 if result:
                                     cprint(f"   ✅ LONG position opened (netting against SHORT)", "green")
                                     add_console_log(f"✅ Opened LONG {symbol} ${notional:.2f} (netting)", "success")
-                                    
+
                                     # Update tracker to reflect net position
                                     if POSITION_TRACKER_AVAILABLE:
                                         try:
@@ -2234,7 +2338,10 @@ Return ONLY valid JSON with the following structure:
 
                         # Execute trade and verify success
                         result = None
-                        if EXCHANGE == "HYPERLIQUID":
+                        if DRY_RUN:
+                            cprint(f"   🧪 DRY_RUN: would open LONG {symbol} ${notional:.2f}", "magenta")
+                            result = {"status": "dry_run", "symbol": symbol, "notional": notional}
+                        elif EXCHANGE == "HYPERLIQUID":
                             result = n.ai_entry(symbol, notional, leverage=LEVERAGE, account=self.account)
                         elif EXCHANGE == "ASTER":
                             result = n.ai_entry(symbol, notional, leverage=LEVERAGE)
@@ -2258,6 +2365,21 @@ Return ONLY valid JSON with the following structure:
                             except Exception as e:
                                 cprint(f"   ⚠️ Position log error: {e}", "yellow")
 
+                            if TRADE_LOGGER_AVAILABLE:
+                                try:
+                                    log_trade(
+                                        symbol=symbol,
+                                        action="OPEN_LONG",
+                                        side="LONG",
+                                        notional_usd=notional,
+                                        margin_usd=margin_usd,
+                                        leverage=LEVERAGE,
+                                        reason=reason,
+                                        strategy=self.active_strategy
+                                    )
+                                except Exception as e:
+                                    cprint(f"   ⚠️ Trade logger error: {e}", "yellow")
+
                             executed_count += 1
                         else:
                             cprint(f"   ❌ LONG position failed to open (no result returned)", "red")
@@ -2275,20 +2397,33 @@ Return ONLY valid JSON with the following structure:
 
                         notional = margin_usd * LEVERAGE
 
+                        # Balance-aware sizing: cap at max position size
+                        balance = self._get_account_balance()
+                        if balance > 0:
+                            max_notional = get_position_size_usd(balance)
+                            if notional > max_notional:
+                                cprint(f"   🛡️ Capping {symbol} notional: ${notional:.2f} → ${max_notional:.2f} (92% of ${balance:.2f} balance)", "yellow")
+                                notional = max_notional
+                                margin_usd = notional / LEVERAGE
+
                         # CRITICAL FIX: Handle position conflicts more efficiently
                         if im_in_pos and is_long:
                             # Opposite position exists - allocate in opposite direction instead of closing first
                             cprint(f"   🔄 Opposite position detected - allocating in opposite direction", "cyan")
-                            
+
                             # For HyperLiquid, we can directly open opposite position which will net against existing
                             if EXCHANGE == "HYPERLIQUID":
                                 cprint(f"   📉 Opening SHORT to net against existing LONG", "cyan")
-                                result = n.open_short(symbol, notional, leverage=LEVERAGE, account=self.account)
-                                
+                                if DRY_RUN:
+                                    cprint(f"   🧪 DRY_RUN: would open SHORT {symbol} ${notional:.2f}", "magenta")
+                                    result = {"status": "dry_run", "symbol": symbol, "notional": notional}
+                                else:
+                                    result = n.open_short(symbol, notional, leverage=LEVERAGE, account=self.account)
+
                                 if result:
                                     cprint(f"   ✅ SHORT position opened (netting against LONG)", "green")
                                     add_console_log(f"✅ Opened SHORT {symbol} ${notional:.2f} (netting)", "success")
-                                    
+
                                     # Update tracker to reflect net position
                                     if POSITION_TRACKER_AVAILABLE:
                                         try:
@@ -2330,7 +2465,10 @@ Return ONLY valid JSON with the following structure:
 
                         # Execute trade and verify success
                         result = None
-                        if EXCHANGE == "HYPERLIQUID":
+                        if DRY_RUN:
+                            cprint(f"   🧪 DRY_RUN: would open SHORT {symbol} ${notional:.2f}", "magenta")
+                            result = {"status": "dry_run", "symbol": symbol, "notional": notional}
+                        elif EXCHANGE == "HYPERLIQUID":
                             result = n.open_short(symbol, notional, leverage=LEVERAGE, account=self.account)
                         elif EXCHANGE == "ASTER":
                             if hasattr(n, 'open_short'):
@@ -2356,6 +2494,21 @@ Return ONLY valid JSON with the following structure:
                                 log_position_open(symbol, "SHORT", notional)
                             except Exception as e:
                                 cprint(f"   ⚠️ Position log error: {e}", "yellow")
+
+                            if TRADE_LOGGER_AVAILABLE:
+                                try:
+                                    log_trade(
+                                        symbol=symbol,
+                                        action="OPEN_SHORT",
+                                        side="SHORT",
+                                        notional_usd=notional,
+                                        margin_usd=margin_usd,
+                                        leverage=LEVERAGE,
+                                        reason=reason,
+                                        strategy=self.active_strategy
+                                    )
+                                except Exception as e:
+                                    cprint(f"   ⚠️ Trade logger error: {e}", "yellow")
 
                             executed_count += 1
                         else:
@@ -2725,22 +2878,47 @@ Return ONLY valid JSON with the following structure:
 
             # STEP 5: ANALYZE TOKENS FOR NEW ENTRIES
             cprint("\n📈 Analyzing tokens for new entry opportunities...", "white", "on_blue")
-            for token, data in market_data.items():
-                if self.should_stop():
-                    add_console_log(f"ℹ️ Stop signal received - stopping analysis at {token}", "warning")
-                    return
 
-                cprint(f"\n📊 Analyzing {token}...", "white", "on_green")
-                add_console_log(f"📊 Analyzing {token}...", "info")
+            # Engine v6.1 path: generate signals directly, skip AI entry analysis
+            if self.active_strategy in ('engine_v6_1', 'engine_v1', 'engine_v1_3') and self.strategy_engine:
+                cprint(f"🚀 {self.active_strategy} is active - generating technical entry signals", "magenta", attrs=["bold"])
+                engine_signals = self._compute_engine_signals(market_data)
+                for token, sig in engine_signals.items():
+                    if sig["direction"] in ("BUY", "SELL"):
+                        self.recommendations_df = pd.concat(
+                            [
+                                self.recommendations_df,
+                                pd.DataFrame(
+                                    [
+                                        {
+                                            "token": token,
+                                            "action": sig["direction"],
+                                            "confidence": int(sig["signal"] * 100),
+                                            "reasoning": f"{self.active_strategy} | ADX={sig['metadata']['adx']} | fast={sig['metadata']['fast_ema']} medm={sig['metadata']['medm_ema']} slow={sig['metadata']['slow_sma']}",
+                                        }
+                                    ]
+                                ),
+                            ],
+                            ignore_index=True,
+                        )
+                        add_console_log(f"{self.active_strategy} {token} -> {sig['direction']} | {int(sig['signal'] * 100)}%", "success")
+            else:
+                for token, data in market_data.items():
+                    if self.should_stop():
+                        add_console_log(f"ℹ️ Stop signal received - stopping analysis at {token}", "warning")
+                        return
 
-                if strategy_signals and token in strategy_signals:
-                    data["strategy_signals"] = strategy_signals[token]
+                    cprint(f"\n📊 Analyzing {token}...", "white", "on_green")
+                    add_console_log(f"📊 Analyzing {token}...", "info")
 
-                analysis = self.analyze_market_data(token, data)
-                if analysis:
-                    print(f"\n📈 Analysis for {token}:")
-                    print(analysis)
-                    print("\n" + "=" * 50 + "\n")
+                    if strategy_signals and token in strategy_signals:
+                        data["strategy_signals"] = strategy_signals[token]
+
+                    analysis = self.analyze_market_data(token, data)
+                    if analysis:
+                        print(f"\n📈 Analysis for {token}:")
+                        print(analysis)
+                        print("\n" + "=" * 50 + "\n")
 
             if self.should_stop():
                 add_console_log("ℹ️ Stop signal received - aborting cycle", "warning")

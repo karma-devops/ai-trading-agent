@@ -5,6 +5,7 @@ Built with love by Moon Dev 🚀
 This module provides integration with locally running Ollama models.
 """
 
+import os
 import requests
 import json
 from termcolor import cprint
@@ -100,14 +101,17 @@ class OllamaModel(BaseModel):
             "parameters": "2B"
         },
     }
-    
-    def __init__(self, api_key=None, model_name="deepseek-v3.1:671b-q4_K_M", base_url=None):
+
+    # Ollama server configuration
+    DEFAULT_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/api")
+
+    def __init__(self, api_key=None, model_name="kimi-k2.7-code", base_url=None):
         """Initialize Ollama model
 
         Args:
             api_key: Not used for Ollama but kept for compatibility
-            model_name: Name of the Ollama model to use (default: quantized DeepSeek V3.1)
-            base_url: Custom Ollama API endpoint (default: http://localhost:11434/api)
+            model_name: Name of the Ollama model to use (default: kimi-k2.7-code)
+            base_url: Custom Ollama API endpoint (default from OLLAMA_BASE_URL env or http://localhost:11434/api)
         """
         self.base_url = base_url or self.DEFAULT_BASE_URL
         self.model_name = model_name

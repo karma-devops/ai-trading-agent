@@ -23,6 +23,25 @@ import subprocess
 from functools import wraps
 
 # ============================================================================
+# REMOTE AGENT API KEY WRAPPER
+# ============================================================================
+AGENT_API_KEY = os.getenv("AGENT_API_KEY", "").strip()
+
+def require_agent_api_key(f):
+    """Decorator for external agent API endpoints protected by AGENT_API_KEY."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not AGENT_API_KEY:
+            return jsonify({"status": "error", "message": "AGENT_API_KEY not configured"}), 503
+        provided = request.headers.get("X-Agent-API-Key", "")
+        if not provided:
+            provided = request.headers.get("Authorization", "").replace("Bearer ", "", 1)
+        if provided != AGENT_API_KEY:
+            return jsonify({"status": "error", "message": "Invalid or missing API key"}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+# ============================================================================
 # SETUP & CONFIGURATION
 # ============================================================================
 
@@ -96,6 +115,8 @@ app.config['SECRET_KEY'] = flask_secret
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
+from werkzeug.security import generate_password_hash, check_password_hash
+
 # Login credentials (loaded from environment variables for security)
 VALID_CREDENTIALS = {
     'username': os.getenv('DASHBOARD_USERNAME', ''),
@@ -103,10 +124,15 @@ VALID_CREDENTIALS = {
     'password': os.getenv('DASHBOARD_PASSWORD', '')
 }
 
-# Validate credentials are set
-if not all(VALID_CREDENTIALS.values()):
-    print("⚠️ WARNING: Dashboard credentials not fully configured in .env!")
-    print("⚠️ Set DASHBOARD_USERNAME, DASHBOARD_EMAIL, and DASHBOARD_PASSWORD")
+# Securely hash password at startup to prevent plaintext memory comparison
+raw_pw = VALID_CREDENTIALS['password']
+if raw_pw:
+    if raw_pw.startswith(('pbkdf2:sha256:', 'scrypt:', 'argon2:')):
+        VALID_CREDENTIALS['password_hash'] = raw_pw
+    else:
+        VALID_CREDENTIALS['password_hash'] = generate_password_hash(raw_pw)
+else:
+    VALID_CREDENTIALS['password_hash'] = ''
 
 # Enable CORS
 CORS(app)
@@ -1016,10 +1042,14 @@ def run_trading_agent():
                 # Pass user-selected tokens to the agent
                 symbols=monitored_tokens,
                 # Pass AI settings
-                ai_provider=user_settings.get('ai_provider', 'openrouter'),
-                ai_model=user_settings.get('ai_model', 'x-ai/grok-4.1-fast'),
+                ai_provider=user_settings.get('ai_provider', 'ollama'),
+                ai_model=user_settings.get('ai_model', 'kimi-k2.7-code'),
                 ai_temperature=user_settings.get('ai_temperature', 0.6),
-                ai_max_tokens=user_settings.get('ai_max_tokens', 8024),
+                ai_max_tokens=user_settings.get('ai_max_tokens', 2048),
+                ai_base_url=user_settings.get('ai_base_url', ''),
+                ai_api_key=user_settings.get('ai_api_key', ''),
+                # Pass strategy selection
+                active_strategy=user_settings.get('active_strategy', 'confidence_ai'),
                 # Pass swarm mode settings
                 swarm_mode=user_settings.get('swarm_mode', 'single'),
                 swarm_models=user_settings.get('swarm_models', [])
@@ -1144,14 +1174,15 @@ def api_login():
     username = data.get('username', '').strip()
     password = data.get('password', '').strip()
 
-    # Check credentials (username OR email, and password)
-    if ((username == VALID_CREDENTIALS['username'] or
-         username == VALID_CREDENTIALS['email']) and
-        password == VALID_CREDENTIALS['password']):
+    # Check credentials securely using salted hashing verification
+    is_valid_user = (username == VALID_CREDENTIALS['username'] or username == VALID_CREDENTIALS['email'])
+    is_valid_password = check_password_hash(VALID_CREDENTIALS['password_hash'], password) if VALID_CREDENTIALS['password_hash'] else False
+
+    if is_valid_user and is_valid_password:
 
         session['logged_in'] = True
         session['username'] = VALID_CREDENTIALS['username']
-        add_console_log(f"User {VALID_CREDENTIALS['username']} logged in", "success")
+        add_console_log(f"User {VALID_CREDENTIALS['username']} logged in securely", "success")
 
         return jsonify({
             'success': True,
@@ -1681,6 +1712,204 @@ def get_agent_status():
         }), 500
 
 
+# ============================================================================
+# REMOTE AGENT API (external tools / cron / MCP)
+# Protected by AGENT_API_KEY in .env, independent of dashboard session auth.
+# ============================================================================
+
+@app.route('/api/agent/remote/status', methods=['GET'])
+@require_agent_api_key
+def remote_agent_status():
+    """Remote-friendly agent status."""
+    state = load_agent_state()
+    return jsonify({
+        "agent_running": agent_running,
+        "executing": agent_executing,
+        "stop_requested": stop_agent_flag,
+        "last_started": state.get("last_started"),
+        "last_stopped": state.get("last_stopped"),
+        "total_cycles": state.get("total_cycles", 0),
+        "exchange_connected": EXCHANGE_CONNECTED,
+        "timestamp": datetime.now().isoformat()
+    })
+
+
+@app.route('/api/agent/remote/start', methods=['POST'])
+@require_agent_api_key
+def remote_agent_start():
+    """Remote start of the trading agent. Mirrors /api/start logic."""
+    global agent_thread, agent_running, stop_agent_flag, agent_executing
+
+    with state_lock:
+        if agent_running:
+            return jsonify({"status": "already_running", "message": "Agent is already running"})
+        if agent_thread and agent_thread.is_alive():
+            return jsonify({"status": "still_stopping", "message": "Agent thread is still shutting down"})
+
+        stop_agent_flag = False
+        stop_event.clear()
+        agent_running = True
+
+        state = load_agent_state()
+        state["running"] = True
+        state["last_started"] = datetime.now().isoformat()
+        save_agent_state(state)
+
+    try:
+        agent_thread = threading.Thread(target=run_trading_agent, daemon=True)
+        agent_thread.start()
+    except Exception as e:
+        agent_running = False
+        return jsonify({"status": "error", "message": f"Failed to start agent: {e}"}), 500
+
+    add_console_log("Trading agent started via remote API", "success")
+    return jsonify({"status": "started", "message": "Trading agent started via remote API"})
+
+
+@app.route('/api/agent/remote/stop', methods=['POST'])
+@require_agent_api_key
+def remote_agent_stop():
+    """Remote stop of the trading agent. Mirrors /api/stop logic."""
+    global agent_running, stop_agent_flag
+
+    stopped = False
+    with state_lock:
+        if agent_running:
+            stop_agent_flag = True
+            agent_running = False
+            stop_event.set()
+
+            state = load_agent_state()
+            state["running"] = False
+            state["last_stopped"] = datetime.now().isoformat()
+            save_agent_state(state)
+            stopped = True
+
+    add_console_log("Trading agent stopped via remote API", "info")
+    return jsonify({"status": "stopped" if stopped else "not_running", "message": "Agent stop requested via remote API"})
+
+
+@app.route('/api/agent/remote/estop', methods=['POST'])
+@require_agent_api_key
+def remote_agent_estop():
+    """Remote emergency stop. Calls the dashboard estop endpoint logic."""
+    data = request.get_json(silent=True) or {}
+    close_positions = bool(data.get('close_positions', True))
+
+    # Build a synthetic request context for the dashboard estop
+    with app.test_request_context('/api/estop', method='POST', json={'close_positions': close_positions}):
+        # We must set session-like globals; the dashboard estop is login_required,
+        # so we bypass by calling the underlying function directly.
+        return emergency_stop()
+
+
+@app.route('/api/agent/remote/settings', methods=['GET', 'POST'])
+@require_agent_api_key
+def remote_agent_settings():
+    """Remote read or update user settings (persisted to .env)."""
+    if request.method == 'GET':
+        return jsonify({"success": True, "settings": load_settings()})
+
+    data = request.get_json(silent=True) or {}
+    if not data:
+        return jsonify({"success": False, "error": "No settings provided"}), 400
+
+    current = load_settings()
+    current.update(data)
+    is_valid, errors = validate_settings(current)
+    if not is_valid:
+        return jsonify({"success": False, "errors": errors}), 400
+
+    save_settings(current)
+    return jsonify({"success": True, "settings": current})
+
+
+@app.route('/api/agent/remote/trades', methods=['GET'])
+@require_agent_api_key
+def remote_agent_trades():
+    """Remote read recent trades from SQLite trade log."""
+    try:
+        from src.utils.trade_logger import get_recent_trades
+        limit = request.args.get('limit', 100, type=int)
+        return jsonify({"success": True, "trades": get_recent_trades(limit=limit)})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/estop', methods=['POST'])
+@login_required
+def emergency_stop():
+    """
+    Emergency stop: halt the trading agent and optionally close all open positions.
+    Request body: {"close_positions": true|false}
+    """
+    global agent_running, stop_agent_flag
+
+    data = request.get_json(silent=True) or {}
+    close_positions = bool(data.get('close_positions', False))
+
+    # Always stop the agent first
+    stopped = False
+    with state_lock:
+        if agent_running:
+            stop_agent_flag = True
+            agent_running = False
+            stop_event.set()
+
+            state = load_agent_state()
+            state["running"] = False
+            state["last_stopped"] = datetime.now().isoformat()
+            state["estop_triggered"] = datetime.now().isoformat()
+            save_agent_state(state)
+            stopped = True
+
+    add_console_log("🛑 EMERGENCY STOP triggered", "error")
+
+    closed = []
+    failed = []
+    if close_positions:
+        try:
+            from src.agents.trading_agent import EXCHANGE
+            from src import nice_funcs_hyperliquid as n
+            from eth_account import Account
+
+            account = None
+            private_key = os.getenv("HYPER_LIQUID_ETH_PRIVATE_KEY", "")
+            if private_key:
+                account = Account.from_key(private_key)
+
+            if EXCHANGE == "HYPERLIQUID" and account:
+                user_settings = load_settings()
+                monitored_tokens = user_settings.get('monitored_tokens', [])
+                for symbol in monitored_tokens:
+                    try:
+                        pos = n.get_position(symbol, account)
+                        _, im_in_pos, pos_size, _, _, _, _ = pos
+                        if im_in_pos and float(pos_size) != 0:
+                            if n.close_complete_position(symbol, account):
+                                closed.append(symbol)
+                                add_console_log(f"🛑 E-stop closed {symbol}", "success")
+                            else:
+                                failed.append(symbol)
+                                add_console_log(f"🛑 E-stop failed to close {symbol}", "error")
+                    except Exception as e:
+                        failed.append(symbol)
+                        add_console_log(f"🛑 E-stop error closing {symbol}: {e}", "error")
+            else:
+                add_console_log("🛑 E-stop: close_positions requested but no account configured", "warning")
+        except Exception as e:
+            add_console_log(f"🛑 E-stop close_positions error: {e}", "error")
+
+    return jsonify({
+        "status": "estop_triggered",
+        "agent_stopped": stopped,
+        "close_positions_requested": close_positions,
+        "positions_closed": closed,
+        "positions_failed": failed,
+        "timestamp": datetime.now().isoformat()
+    })
+
+
 @app.route('/api/settings', methods=['GET', 'POST'])
 @login_required
 def settings():
@@ -1719,6 +1948,19 @@ def settings():
 
             # Save settings
             if save_settings(data):
+                # Persist AI provider/model/base_url/key + strategy to .env
+                try:
+                    from src.utils.secrets_manager import save_ai_settings
+                    save_ai_settings(
+                        provider=data.get('ai_provider', ''),
+                        model=data.get('ai_model', ''),
+                        base_url=data.get('ai_base_url', ''),
+                        api_key=data.get('ai_api_key', ''),
+                        active_strategy=data.get('active_strategy', ''),
+                    )
+                except Exception as e:
+                    print(f"⚠️ Could not persist AI settings to .env: {e}")
+
                 # Build detailed log message
                 log_parts = [
                     f"Timeframe={data.get('timeframe')}",
@@ -1729,6 +1971,10 @@ def settings():
                 # Add AI model info if present
                 if 'ai_provider' in data and 'ai_model' in data:
                     log_parts.append(f"AI={data.get('ai_provider')}/{data.get('ai_model')}")
+
+                # Add strategy info if present
+                if 'active_strategy' in data:
+                    log_parts.append(f"Strategy={data.get('active_strategy')}")
 
                 add_console_log(f"Settings updated: {', '.join(log_parts)}", "info")
 
@@ -1778,11 +2024,20 @@ def get_ai_models():
         else:
             # Get all providers and their models
             all_providers = ['openrouter', 'anthropic', 'openai', 'gemini', 'deepseek', 'xai',
-                           'mistral', 'cohere', 'perplexity', 'groq']
+                           'mistral', 'cohere', 'perplexity', 'groq', 'ollama', 'ollamafreeapi', 'generic_openai']
 
             all_models = {}
             for p in all_providers:
                 all_models[p] = get_available_models_for_provider(p)
+
+            # If Ollama server is not live, return a minimal model list so the UI still works
+            if not all_models.get('ollama'):
+                all_models['ollama'] = {
+                    'kimi-k2.7-code': 'Kimi K2.7 Code (Ollama cloud)',
+                    'llama3.2': 'Llama 3.2 3B (local)',
+                    'qwen2.5': 'Qwen 2.5 7B (local)',
+                    'deepseek-v3.1:671b-q4_K_M': 'DeepSeek V3.1 671B Q4 (local)'
+                }
 
             return jsonify({
                 'success': True,
@@ -1795,6 +2050,23 @@ def get_ai_models():
         return jsonify({
             'success': False,
             'message': f'Error: {str(e)}'
+        }), 500
+
+
+@app.route('/api/strategies', methods=['GET'])
+@login_required
+def get_strategies():
+    """List available trading strategies"""
+    try:
+        from src.utils.settings_manager import get_available_strategies
+        return jsonify({
+            'success': True,
+            'strategies': get_available_strategies()
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error loading strategies: {str(e)}'
         }), 500
 
 

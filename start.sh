@@ -1,0 +1,6 @@
+#!/bin/bash
+# Gunicorn launcher used by Dockerfile and docker-compose.
+# EasyPanel will run this automatically when the container starts.
+cd "$(dirname "$0")"
+export PORT="${PORT:-5000}"
+exec gunicorn -w 2 -b "0.0.0.0:${PORT}" --timeout 120 --worker-class sync --access-logfile - --error-logfile - wsgi:app

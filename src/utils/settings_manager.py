@@ -95,26 +95,21 @@ DEFAULT_SETTINGS = {
     # Token settings - Main trading tokens
     "monitored_tokens": ["BTC", "ETH", "SOL", "LTC", "AAVE", "AVAX", "HYPE"],
 
-    # Main AI Model settings - OpenRouter FREE model (best for trading)
-    # Uses official OpenRouter free models: https://openrouter.ai/collections/free-models
-    "ai_provider": "openrouter",                      # OpenRouter with FREE models
-    "ai_model": "nex-agi/deepseek-v3.1-nex-n1:free", # FREE - Best reasoning model
-    "ai_temperature": 0.5,                            # Balanced for trading decisions
-    "ai_max_tokens": 2048,                            # Sufficient for trading analysis
+    # Main AI Model settings
+    "ai_provider": "ollama",                          # Default: Ollama cloud
+    "ai_model": "kimi-k2.7-code",                     # Default model
+    "ai_base_url": "",                                # Set in UI or .env, e.g. https://ollama.com/v1
+    "ai_api_key": "",                                 # For endpoints that require a key
+    "ai_temperature": 0.5,
+    "ai_max_tokens": 2048,
 
-    # Alternative FREE models on OpenRouter:
-    # "ai_model": "xiaomi/mimo-v2-flash:free",        # Ultra-fast
-    # "ai_model": "mistralai/devstral-2512:free",     # Coding optimized
-    # "ai_model": "tngtech/deepseek-r1t2-chimera:free", # Hybrid reasoning
-    # "ai_model": "kwaipilot/kat-coder-pro-v1:free",  # Code generation
+    # Strategy settings
+    "active_strategy": "confidence_ai", # Selected strategy: confidence_ai | engine_v6_1 | engine_v1 | engine_v1_3
 
     # Swarm AI Model settings (for multi-agent mode) - MAX 6 MODELS
-    # Defaults use FREE OpenRouter models to minimize costs
     "swarm_models": [
-        {"provider": "openrouter", "model": "nex-agi/deepseek-v3.1-nex-n1:free", "temperature": 0.5, "max_tokens": 2048},
-        {"provider": "openrouter", "model": "xiaomi/mimo-v2-flash:free", "temperature": 0.5, "max_tokens": 2048},
-        {"provider": "openrouter", "model": "mistralai/devstral-2512:free", "temperature": 0.5, "max_tokens": 2048},
-        {"provider": "openrouter", "model": "tngtech/deepseek-r1t2-chimera:free", "temperature": 0.5, "max_tokens": 2048},
+        {"provider": "ollama", "model": "kimi-k2.7-code", "base_url": "", "api_key": "", "temperature": 0.5, "max_tokens": 2048},
+        {"provider": "openrouter", "model": "deepseek/deepseek-v4-0324:free", "base_url": "https://openrouter.ai/api/v1", "api_key": "", "temperature": 0.5, "max_tokens": 2048},
     ],
 
     # Timestamp
@@ -265,19 +260,26 @@ def get_available_models_for_provider(provider):
         # - TODO: Set up dedicated Ollama server for more reliable free inference
         # - For now, recommend using Gemini (free tier) or DeepSeek API as alternatives
         'ollama': {
-            # DeepSeek V3.2 - BEST for Trading (Local)
+            # Ollama cloud / local compatible models
+            'kimi-k2.7-code': 'Kimi K2.7 Code ⚡ Default',
             'deepseek-v3.2': 'DeepSeek V3.2 ⚡ BEST',
             'deepseek-v3.2:671b-q4_K_M': 'DeepSeek V3.2 Q4 - Memory efficient',
-            # DeepSeek V3.1 - Stable for Trading (Local)
-            'deepseek-v3.1:671b': 'DeepSeek V3.1 671B ⚡ Recommended',
+            'deepseek-v3.1:671b': 'DeepSeek V3.1 671B',
             'deepseek-v3.1:671b-q4_K_M': 'DeepSeek V3.1 Q4 - Efficient',
-            # Other models (Local)
             'deepseek-r1': 'DeepSeek R1 - Reasoning',
             'deepseek-coder': 'DeepSeek Coder - STEM/code',
             'llama3.2': 'LLaMA 3.2 - Balanced',
             'llama3.3:70b': 'LLaMA 3.3 70B - Large',
             'qwen3:8b': 'Qwen3 8B - Fast',
             'mistral': 'Mistral - General',
+        },
+        'generic_openai': {
+            # Any OpenAI-compatible endpoint
+            'kimi-k2.7-code': 'Kimi K2.7 Code ⚡ Default',
+            'deepseek/deepseek-v4-0324:free': 'DeepSeek V4 Flash',
+            'deepseek-v3.2': 'DeepSeek V3.2',
+            'llama3.3:70b': 'LLaMA 3.3 70B',
+            'qwen3:8b': 'Qwen3 8B',
         },
         # NOTE: OllamaFreeAPI has known reliability issues
         # TODO: Set up dedicated server for more reliable free model access
@@ -340,7 +342,7 @@ def get_available_models_for_provider(provider):
 
 def validate_ai_provider(provider):
     """Validate AI provider"""
-    valid_providers = ['openrouter', 'anthropic', 'openai', 'gemini', 'deepseek', 'xai', 'mistral', 'cohere', 'perplexity', 'groq', 'ollama', 'ollamafreeapi']
+    valid_providers = ['openrouter', 'anthropic', 'openai', 'gemini', 'deepseek', 'xai', 'mistral', 'cohere', 'perplexity', 'groq', 'ollama', 'ollamafreeapi', 'generic_openai']
     return provider in valid_providers
 
 
@@ -417,6 +419,21 @@ def validate_swarm_models(models):
     return True, None
 
 
+def validate_active_strategy(strategy):
+    """Validate active strategy selection."""
+    return strategy in ['confidence_ai', 'engine_v6_1']
+
+
+def get_available_strategies():
+    """Strategy metadata for UI."""
+    return [
+        {"id": "confidence_ai", "name": "AI Confidence (default)", "best_for": "All tokens"},
+        {"id": "engine_v6_1", "name": "Engine v6.1", "best_for": "PEPE and FARTCOIN"},
+        {"id": "engine_v1", "name": "Eve Engine v1", "best_for": "PEPE 1h swing"},
+        {"id": "engine_v1_3", "name": "Eve Engine v1.3", "best_for": "PEPE 15m scalp (Scalp Aggressive 8/3)"},
+    ]
+
+
 def validate_settings(settings):
     """Validate settings dictionary"""
     errors = []
@@ -459,6 +476,16 @@ def validate_settings(settings):
     if "ai_provider" in settings and not validate_ai_provider(settings["ai_provider"]):
         errors.append(f"Invalid AI provider: {settings['ai_provider']}")
 
+    # Validate AI base_url if provided (must be http/https or empty)
+    if "ai_base_url" in settings and settings["ai_base_url"]:
+        url = settings["ai_base_url"].strip()
+        if not (url.startswith("http://") or url.startswith("https://")):
+            errors.append("ai_base_url must be a valid http:// or https:// URL")
+
+    # Validate AI api_key is a string (can be empty)
+    if "ai_api_key" in settings and not isinstance(settings["ai_api_key"], str):
+        errors.append("ai_api_key must be a string")
+
     # Validate AI temperature
     if "ai_temperature" in settings and not validate_ai_temperature(settings["ai_temperature"]):
         errors.append("ai_temperature must be between 0.0 and 1.0")
@@ -472,5 +499,10 @@ def validate_settings(settings):
         valid, error = validate_swarm_models(settings["swarm_models"])
         if not valid:
             errors.append(error)
+
+    # Validate active_strategy
+    if "active_strategy" in settings:
+        if not validate_active_strategy(settings["active_strategy"]):
+            errors.append("active_strategy must be one of 'confidence_ai', 'engine_v6_1', 'engine_v1', 'engine_v1_3'")
 
     return len(errors) == 0, errors

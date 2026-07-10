@@ -31,6 +31,9 @@
                 <button class="icon-btn icon-btn-stop" id="pause-btn" style="display:none;" onclick="stopAgent()" title="Stop Agent">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
                 </button>
+                <button class="icon-btn icon-btn-estop" id="estop-btn" onclick="emergencyStop()" title="EMERGENCY STOP - Close all positions and halt agent">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+                </button>
                 <button class="icon-btn" onclick="toggleMenu()" title="Menu">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
                 </button>
@@ -156,6 +159,10 @@
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v12m-6-6h12"></path></svg>
                     TOKEN
                 </button>
+                <button class="settings-tab" data-tab="strategy" onclick="switchSettingsTab('strategy')">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h20"></path><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-6"></path><path d="M12 2v10"></path></svg>
+                    STRATEGY
+                </button>
                 <button class="settings-tab" data-tab="models" onclick="switchSettingsTab('models')">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>
                     MODELS
@@ -240,7 +247,16 @@
                 <div id="tab-token" class="settings-tab-content">
                     <div class="setting-section">
                         <h3 class="section-title">Token Selection</h3>
-                        <p class="section-desc">Select tokens to monitor from Hyperliquid exchange</p>
+                        <p class="section-desc">Select tokens to monitor from Hyperliquid exchange, or add a custom symbol</p>
+
+                        <div class="setting-group custom-token-group">
+                            <label for="custom-token-input">Add Custom Token</label>
+                            <div class="custom-token-row">
+                                <input type="text" id="custom-token-input" class="setting-input" placeholder="e.g. PEPE, FARTCOIN" />
+                                <button class="btn-add-token" onclick="addCustomToken()">Add</button>
+                            </div>
+                            <span class="input-hint">Custom symbols must exist on HyperLiquid. Invalid symbols are marked after save.</span>
+                        </div>
 
                         <div class="token-categories">
                             <!-- Crypto Category -->
@@ -341,6 +357,38 @@
 
                         <div class="swarm-models-list" id="swarm-models-list">
                             <!-- Swarm models populated by JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- STRATEGY Tab Content -->
+                <div id="tab-strategy" class="settings-tab-content">
+                    <div class="setting-section">
+                        <h3 class="section-title">Trading Strategy</h3>
+                        <p class="section-desc">Choose how the agent generates entry signals</p>
+
+                        <div class="setting-group">
+                            <label for="strategy-select">Active Strategy</label>
+                            <select id="strategy-select" class="setting-input" onchange="updateStrategyHint()">
+                                <option value="confidence_ai">AI Confidence (default) - All tokens</option>
+                                <option value="engine_v6_1">Engine v6.1 - Best for PEPE and FARTCOIN</option>
+                            </select>
+                            <span class="input-hint" id="strategy-hint">AI model decides trades based on confidence score.</span>
+                        </div>
+                    </div>
+
+                    <div class="setting-section">
+                        <h3 class="section-title">BYOK AI Endpoint (optional)</h3>
+                        <p class="section-desc">Override endpoint and key for Ollama cloud or any OpenAI-compatible provider</p>
+
+                        <div class="setting-group">
+                            <label for="ai-base-url">Base URL</label>
+                            <input type="text" id="ai-base-url" class="setting-input" placeholder="https://ollama.com/v1 or https://api.openrouter.ai/v1" />
+                        </div>
+
+                        <div class="setting-group">
+                            <label for="ai-api-key">API Key</label>
+                            <input type="password" id="ai-api-key" class="setting-input" placeholder="Leave blank to use .env value" />
                         </div>
                     </div>
                 </div>
