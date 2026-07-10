@@ -291,14 +291,22 @@ def save_secrets(secrets: Dict) -> Tuple[bool, Optional[str]]:
 
 
 def load_secrets_to_env():
-    """Load saved API keys into environment variables"""
+    """Load saved API keys and trading credentials into environment variables"""
     secrets = load_secrets()
     api_keys = secrets.get("api_keys", {})
+    trading_keys = secrets.get("trading_keys", {})
 
+    # AI provider keys
     for provider, key in api_keys.items():
         if provider in AI_PROVIDERS and key:
             env_var = AI_PROVIDERS[provider]["env_var"]
             os.environ[env_var] = key
+
+    # Trading credentials (HyperLiquid)
+    for cred_id, value in trading_keys.items():
+        if cred_id in TRADING_CREDENTIALS and value:
+            env_var = TRADING_CREDENTIALS[cred_id]["env_var"]
+            os.environ[env_var] = value
 
 
 def get_api_key(provider: str) -> Optional[str]:

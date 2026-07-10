@@ -36,13 +36,15 @@ TIERS = {
             "swarm_mode": False,
             "byok": False,
             "max_swarm_models": 0,
-            "providers": ["ollama", "ollamafreeapi"],  # Free providers only
+            "providers": ["ollama"],  # Single default provider only
+            "locked_default_model": True,  # Free plan can only use the default model, no changes
         },
         "limits_display": [
             "Up to 5 tokens",
             "5+ minute cycles",
-            "Single AI mode only",
-            "Free AI models (Ollama)",
+            "Single AI mode only (no swarm)",
+            "Default AI model only (no custom models)",
+            "No BYOK (Bring Your Own Key)",
         ]
     },
     "trader": {
@@ -98,7 +100,7 @@ TIERS = {
 
 # Users with special access (for testing/development)
 # These users can access all tiers regardless of subscription
-ADMIN_USERS = ["KW-Trader", "admin", "moondev"]
+ADMIN_USERS = ["KW-Trader", "admin", "moondev", "operator"]
 
 # ============================================================================
 # TIER MANAGEMENT FUNCTIONS

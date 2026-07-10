@@ -702,6 +702,7 @@ def get_account_data():
     try:
         account = _get_account()
         address = _get_wallet_address(account)
+        print(f"🔗 HL Connection: account={account.address[:8]}... wallet={address[:8]}...")
         if hasattr(n, 'get_available_balance'):
             available_balance = float(n.get_available_balance(address))
         else:
@@ -731,7 +732,10 @@ def get_account_data():
     except Exception as e:
         error_msg = f"Error fetching account data: {str(e)}"
         print(f"❌ {error_msg}")
-        add_console_log(f"❌ {error_msg}")
+        try:
+            add_console_log(f"❌ {error_msg}", "error")
+        except Exception:
+            pass
         
         return {
             "account_balance": 0.0,

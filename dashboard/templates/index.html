@@ -620,10 +620,22 @@
                 <div id="account-tab-secrets" class="settings-tab-content">
                     <div class="setting-section">
                         <h3 class="section-title">HyperLiquid Credentials</h3>
-                        <p class="section-desc">Private key signs orders. Wallet address is used to query account data (positions, balance). Both are required if using an API wallet key.</p>
+                        <p class="section-desc">
+                            <strong>Private Key:</strong> Signs your trades. Use your MetaMask private key OR an API wallet key from HyperLiquid settings.<br>
+                            <strong>Wallet Address:</strong> Your MetaMask address (0x...) that holds your USDC on HyperLiquid. This is the address you see on <a href="https://app.hyperliquid.xyz" target="_blank">app.hyperliquid.xyz</a> when connected.<br>
+                            <em>Do NOT use the API wallet address here — it doesn't hold funds. Always use your main MetaMask address.</em>
+                        </p>
                     </div>
                     <div class="secrets-list" id="hl-credentials-list">
                         <div class="loading-secrets">Loading HyperLiquid credentials...</div>
+                    </div>
+                    <div class="setting-section" style="margin-top: 16px; padding: 12px; background: rgba(255,193,7,0.1); border-radius: 8px; border: 1px solid rgba(255,193,7,0.2);">
+                        <p style="font-size: 13px; color: #ffc107; margin: 0;">
+                            <strong>How to find your credentials:</strong><br>
+                            1. <strong>MetaMask Address:</strong> Open MetaMask → copy the 0x... address at the top. This is your Wallet Address.<br>
+                            2. <strong>Private Key:</strong> MetaMask → Account Details → Show Private Key (WARNING: never share this). OR create an API wallet at app.hyperliquid.xyz → Settings → API.<br>
+                            3. If using an API wallet key for signing, you MUST still enter your MetaMask address as the Wallet Address.
+                        </p>
                     </div>
                     <div class="setting-section" style="margin-top: 24px;">
                         <h3 class="section-title">AI Provider API Keys</h3>
