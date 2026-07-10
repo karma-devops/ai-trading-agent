@@ -615,6 +615,9 @@ def _get_hl_private_key():
 
 
 EXCHANGE_CONNECTED = False
+
+# Global list for SSE client connections (must be module-level for Gunicorn)
+sse_clients = []
 try:
     # 1. Prioritize importing from the src module
     from src import nice_funcs_hyperliquid as n
@@ -3138,9 +3141,6 @@ atexit.register(lambda: cleanup_and_exit() if not shutdown_in_progress else None
 if __name__ == '__main__':
     # Get port from environment or default to 5000
     port = int(os.getenv('PORT', 5000))
-
-    # Global list to store SSE client connections for broadcasting
-    sse_clients = []
 
     # Start WebSocket feeds for real-time data
     print("📡 Starting WebSocket feeds...")
