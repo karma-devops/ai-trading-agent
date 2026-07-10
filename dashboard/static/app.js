@@ -1160,7 +1160,7 @@ async function saveSettings() {
     // Collect settings
     const settings = {
         // Strategy settings
-        active_strategy: document.getElementById('strategy-select') ? document.getElementById('strategy-select').value : 'Simple MA Crossover',
+        active_strategy: document.getElementById('strategy-select') ? document.getElementById('strategy-select').value : 'confidence_ai',
 
         // Chart settings
         timeframe: document.getElementById('timeframe-select').value,
@@ -1182,9 +1182,6 @@ async function saveSettings() {
         // BYOK endpoint overrides
         ai_base_url: document.getElementById('ai-base-url').value.trim(),
         ai_api_key: document.getElementById('ai-api-key').value.trim(),
-
-        // Strategy selection
-        active_strategy: document.getElementById('strategy-select').value,
 
         // Swarm models
         swarm_models: collectSwarmModels()
@@ -1445,6 +1442,7 @@ function switchAccountTab(tabName) {
 
     // Load secrets when switching to secrets tab
     if (tabName === 'secrets') {
+        loadHLCredentials();
         loadSecrets();
     }
 
@@ -1493,6 +1491,162 @@ function loadAccountProfile() {
         .catch(error => {
             console.error('Error loading PnL:', error);
         });
+}
+
+// ============================================================================
+// HYPERLIQUID CREDENTIALS
+// ============================================================================
+
+async function loadHLCredentials() {
+    const container = document.getElementById('hl-credentials-list');
+    if (!container) return;
+    container.innerHTML = '<div class="loading-secrets">Loading HyperLiquid credentials...</div>';
+
+    try {
+        const response = await fetch('/api/trading-credentials');
+        const data = await response.json();
+
+        if (data.success) {
+            renderHLCredentials(data.credentials);
+        } else {
+            container.innerHTML = '<div class="error-message">Failed to load HyperLiquid credentials</div>';
+        }
+    } catch (error) {
+        console.error('Error loading HL credentials:', error);
+        container.innerHTML = '<div class="error-message">Failed to load HyperLiquid credentials</div>';
+    }
+}
+
+function renderHLCredentials(credentials) {
+    const container = document.getElementById('hl-credentials-list');
+    if (!container) return;
+
+    const html = Object.entries(credentials).map(([credId, info]) => {
+        const statusClass = info.configured ? 'configured' : 'not-configured';
+        const statusText = info.configured ? 'Configured' : 'Not configured';
+        const sourceLabel = info.source === 'env' ? '(from .env)' : (info.source === 'secrets' ? '(from UI)' : '');
+
+        return `
+            <div class="secret-item ${statusClass}" data-cred="${credId}">
+                <div class="secret-header">
+                    <div class="secret-info">
+                        <span class="secret-name">${info.name}</span>
+                        <span class="secret-status ${statusClass}">${statusText} ${sourceLabel}</span>
+                    </div>
+                    <div class="secret-actions">
+                        ${info.configured ? `
+                            <button class="btn-secret-action btn-view" onclick="toggleHLInput('${credId}')" title="Edit">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                            </button>
+                            <button class="btn-secret-action btn-delete" onclick="deleteHLCredential('${credId}')" title="Delete">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                            </button>
+                        ` : `
+                            <button class="btn-secret-action btn-add" onclick="toggleHLInput('${credId}')" title="Add">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                            </button>
+                        `}
+                    </div>
+                </div>
+                <div class="secret-input-row" id="hl-input-${credId}" style="display: none;">
+                    <div class="secret-input-group">
+                        <input type="password" class="setting-input secret-key-input"
+                               placeholder="${info.placeholder}" id="hl-value-${credId}" />
+                        <button class="btn-secret-action btn-view" onclick="toggleHLVisibility('${credId}')" title="Show/Hide">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                        </button>
+                    </div>
+                    <div class="secret-input-actions">
+                        <button class="btn-save-secret" onclick="saveHLCredential('${credId}')">Save</button>
+                        <button class="btn-cancel-secret" onclick="cancelHLInput('${credId}')">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    container.innerHTML = html;
+}
+
+function toggleHLInput(credId) {
+    const inputRow = document.getElementById(`hl-input-${credId}`);
+    document.querySelectorAll('[id^="hl-input-"]').forEach(row => {
+        if (row.id !== `hl-input-${credId}`) row.style.display = 'none';
+    });
+    inputRow.style.display = inputRow.style.display === 'none' ? 'flex' : 'none';
+    if (inputRow.style.display === 'flex') {
+        const input = document.getElementById(`hl-value-${credId}`);
+        if (input) input.focus();
+    }
+}
+
+function cancelHLInput(credId) {
+    const inputRow = document.getElementById(`hl-input-${credId}`);
+    inputRow.style.display = 'none';
+    const input = document.getElementById(`hl-value-${credId}`);
+    if (input) input.value = '';
+}
+
+function toggleHLVisibility(credId) {
+    const input = document.getElementById(`hl-value-${credId}`);
+    if (input) {
+        input.type = input.type === 'password' ? 'text' : 'password';
+    }
+}
+
+async function saveHLCredential(credId) {
+    const input = document.getElementById(`hl-value-${credId}`);
+    const value = input.value.trim();
+    if (!value) {
+        showHLValidationMessage('Value cannot be empty', 'error');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/trading-credentials/${credId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ value: value })
+        });
+        const data = await response.json();
+        if (data.success) {
+            showHLValidationMessage(`${credId} saved successfully`, 'success');
+            await loadHLCredentials();
+        } else {
+            showHLValidationMessage(data.message || 'Failed to save', 'error');
+        }
+    } catch (error) {
+        console.error('Error saving HL credential:', error);
+        showHLValidationMessage('Failed to save credential', 'error');
+    }
+}
+
+async function deleteHLCredential(credId) {
+    if (!confirm(`Remove ${credId}?`)) return;
+    try {
+        const response = await fetch(`/api/trading-credentials/${credId}`, { method: 'DELETE' });
+        const data = await response.json();
+        if (data.success) {
+            showHLValidationMessage(`${credId} removed`, 'success');
+            await loadHLCredentials();
+        } else {
+            showHLValidationMessage(data.message || 'Failed to remove', 'error');
+        }
+    } catch (error) {
+        console.error('Error deleting HL credential:', error);
+        showHLValidationMessage('Failed to remove credential', 'error');
+    }
+}
+
+function showHLValidationMessage(message, type) {
+    const el = document.getElementById('secrets-validation');
+    if (el) {
+        el.textContent = message;
+        el.className = `validation-message ${type}`;
+        if (type === 'success') {
+            setTimeout(() => { el.className = 'validation-message'; }, 3000);
+        }
+    }
 }
 
 // ============================================================================
@@ -1934,7 +2088,7 @@ async function loadStrategies() {
             const select = document.getElementById('strategy-select');
             if (select) {
                 select.innerHTML = data.strategies.map(strat => `
-                    <option value="${strat}">${strat}</option>
+                    <option value="${strat.id}">${strat.name}</option>
                 `).join('');
             }
         }

@@ -28,15 +28,35 @@ class ExchangeManager:
         if self.exchange != 'hyperliquid':
             raise ValueError(f"Only 'hyperliquid' is supported. Got: {self.exchange}")
 
-        hl_key = os.getenv('HYPER_LIQUID_KEY')
+        # Read private key: secrets JSON → HYPER_LIQUID_ETH_PRIVATE_KEY env → HYPER_LIQUID_KEY legacy fallback
+        from src.utils.secrets_manager import load_secrets
+        secrets = load_secrets()
+        trading_keys = secrets.get("trading_keys", {})
+        hl_key = trading_keys.get("hyperliquid_private_key")
         if not hl_key:
-            raise ValueError("HYPER_LIQUID_KEY not found in environment")
+            hl_key = os.getenv('HYPER_LIQUID_ETH_PRIVATE_KEY')
+        if not hl_key:
+            hl_key = os.getenv('HYPER_LIQUID_KEY')  # legacy fallback
+        if not hl_key:
+            raise ValueError("HyperLiquid private key not found. Set it in Account > Secrets or via HYPER_LIQUID_ETH_PRIVATE_KEY env var.")
 
+        # Clean the key of accidental quotes or spaces
+        hl_key = hl_key.strip().replace('"', '').replace("'", "")
         self.account = eth_account.Account.from_key(hl_key)
+
+        # Wallet address for queries: secrets JSON → ACCOUNT_ADDRESS env → derived from key
+        self.wallet_address = trading_keys.get("hyperliquid_wallet_address")
+        if not self.wallet_address:
+            self.wallet_address = os.getenv('ACCOUNT_ADDRESS', '')
+        if not self.wallet_address:
+            # Derive from key — works if key is the master wallet key, not an API wallet key
+            self.wallet_address = self.account.address
+
         self.hl = hl
 
         cprint(f"✅ Initialized HyperLiquid exchange manager", "green")
         cprint(f"   Account: {self.account.address[:6]}...{self.account.address[-4:]}", "cyan")
+        cprint(f"   Wallet:  {self.wallet_address[:6]}...{self.wallet_address[-4:]}", "cyan")
 
     def market_buy(self, symbol_or_token, usd_amount):
         """Execute a market buy order."""

@@ -217,7 +217,13 @@ def get_position(symbol_or_address, account=None):
 
     # Determine which address to QUERY
     # We must look at the MAIN Account (from .env), not the API Wallet (account.address)
-    target_address = os.getenv("ACCOUNT_ADDRESS")
+    # Check secrets JSON first, then ACCOUNT_ADDRESS env var, then account.address as fallback
+    from src.utils.secrets_manager import load_secrets
+    secrets = load_secrets()
+    trading_keys = secrets.get("trading_keys", {})
+    target_address = trading_keys.get("hyperliquid_wallet_address")
+    if not target_address:
+        target_address = os.getenv("ACCOUNT_ADDRESS")
 
     # Fallback if .env is missing (but warn user)
     if not target_address and account:
@@ -738,10 +744,17 @@ def get_all_positions(address):
 
 def _get_exchange():
     """Get exchange instance"""
-    # Load the key
-    private_key = os.getenv('HYPER_LIQUID_ETH_PRIVATE_KEY')
+    # Load the key: secrets JSON → env var → legacy fallback
+    from src.utils.secrets_manager import load_secrets
+    secrets = load_secrets()
+    trading_keys = secrets.get("trading_keys", {})
+    private_key = trading_keys.get("hyperliquid_private_key")
     if not private_key:
-        raise ValueError("HYPER_LIQUID_ETH_PRIVATE_KEY not found in .env file")
+        private_key = os.getenv('HYPER_LIQUID_ETH_PRIVATE_KEY')
+    if not private_key:
+        private_key = os.getenv('HYPER_LIQUID_KEY')  # legacy fallback
+    if not private_key:
+        raise ValueError("HyperLiquid private key not found. Set it in Account > Secrets or via HYPER_LIQUID_ETH_PRIVATE_KEY env var.")
     
     # FIX: Clean the key of accidental quotes or spaces
     clean_key = private_key.strip().replace('"', '').replace("'", "")
@@ -755,10 +768,17 @@ def _get_info():
 
 def _get_account_from_env():
     """Initialize and return HyperLiquid account from env"""
-    # Load the key
-    private_key = os.getenv('HYPER_LIQUID_ETH_PRIVATE_KEY')
+    # Load the key: secrets JSON → env var → legacy fallback
+    from src.utils.secrets_manager import load_secrets
+    secrets = load_secrets()
+    trading_keys = secrets.get("trading_keys", {})
+    private_key = trading_keys.get("hyperliquid_private_key")
     if not private_key:
-        raise ValueError("HYPER_LIQUID_ETH_PRIVATE_KEY not found in .env file")
+        private_key = os.getenv('HYPER_LIQUID_ETH_PRIVATE_KEY')
+    if not private_key:
+        private_key = os.getenv('HYPER_LIQUID_KEY')  # legacy fallback
+    if not private_key:
+        raise ValueError("HyperLiquid private key not found. Set it in Account > Secrets or via HYPER_LIQUID_ETH_PRIVATE_KEY env var.")
         
     # FIX: Clean the key of accidental quotes or spaces
     clean_key = private_key.strip().replace('"', '').replace("'", "")

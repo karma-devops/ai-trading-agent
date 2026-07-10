@@ -424,7 +424,7 @@ def validate_swarm_models(models):
 
 def validate_active_strategy(strategy):
     """Validate active strategy selection."""
-    return strategy in ['confidence_ai', 'engine_v6_1']
+    return strategy in ['confidence_ai', 'engine_v6_1', 'engine_v1', 'engine_v1_3']
 
 
 def get_available_strategies():

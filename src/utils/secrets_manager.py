@@ -424,6 +424,82 @@ def validate_api_key_format(provider: str, api_key: str) -> Tuple[bool, Optional
     return True, None
 
 
+# HyperLiquid trading credentials (not AI provider keys)
+TRADING_CREDENTIALS = {
+    "hyperliquid_private_key": {
+        "name": "HyperLiquid Private Key",
+        "env_var": "HYPER_LIQUID_ETH_PRIVATE_KEY",
+        "placeholder": "0x...",
+        "docs_url": "https://hyperliquid.gitbook.io/hyperliquid-docs"
+    },
+    "hyperliquid_wallet_address": {
+        "name": "HyperLiquid Wallet Address",
+        "env_var": "ACCOUNT_ADDRESS",
+        "placeholder": "0x...",
+        "docs_url": "https://hyperliquid.gitbook.io/hyperliquid-docs"
+    },
+}
+
+
+def get_trading_credentials() -> Dict:
+    """
+    Get status of HyperLiquid trading credentials.
+    Checks secrets JSON first, then environment variables.
+    """
+    secrets = load_secrets()
+    trading_keys = secrets.get("trading_keys", {})
+
+    result = {}
+    for cred_id, cred_info in TRADING_CREDENTIALS.items():
+        key = trading_keys.get(cred_id)
+        source = "secrets"
+        if not key:
+            env_var = cred_info["env_var"]
+            key = os.getenv(env_var, "")
+            source = "env" if key else "none"
+
+        result[cred_id] = {
+            "name": cred_info["name"],
+            "configured": bool(key),
+            "masked_key": mask_api_key(key) if key else "",
+            "placeholder": cred_info["placeholder"],
+            "docs_url": cred_info["docs_url"],
+            "source": source
+        }
+
+    return result
+
+
+def set_trading_credential(cred_id: str, value: str) -> Tuple[bool, Optional[str]]:
+    """Set or update a HyperLiquid trading credential."""
+    if cred_id not in TRADING_CREDENTIALS:
+        return False, f"Unknown trading credential: {cred_id}"
+
+    secrets = load_secrets()
+    if "trading_keys" not in secrets:
+        secrets["trading_keys"] = {}
+
+    if value:
+        secrets["trading_keys"][cred_id] = value.strip()
+    elif cred_id in secrets["trading_keys"]:
+        del secrets["trading_keys"][cred_id]
+
+    success, error = save_secrets(secrets)
+    if success:
+        # Also update the environment variable so the running app picks it up
+        env_var = TRADING_CREDENTIALS[cred_id]["env_var"]
+        if value:
+            os.environ[env_var] = value.strip()
+        elif env_var in os.environ:
+            del os.environ[env_var]
+    return success, error
+
+
+def delete_trading_credential(cred_id: str) -> Tuple[bool, Optional[str]]:
+    """Delete a HyperLiquid trading credential."""
+    return set_trading_credential(cred_id, "")
+
+
 def get_available_providers() -> list:
     """Get list of all available provider IDs"""
     return list(AI_PROVIDERS.keys())

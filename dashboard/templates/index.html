@@ -619,7 +619,14 @@
                 <!-- SECRETS Tab Content -->
                 <div id="account-tab-secrets" class="settings-tab-content">
                     <div class="setting-section">
-                        <h3 class="section-title">API Keys</h3>
+                        <h3 class="section-title">HyperLiquid Credentials</h3>
+                        <p class="section-desc">Private key signs orders. Wallet address is used to query account data (positions, balance). Both are required if using an API wallet key.</p>
+                    </div>
+                    <div class="secrets-list" id="hl-credentials-list">
+                        <div class="loading-secrets">Loading HyperLiquid credentials...</div>
+                    </div>
+                    <div class="setting-section" style="margin-top: 24px;">
+                        <h3 class="section-title">AI Provider API Keys</h3>
                         <p class="section-desc">Configure your AI provider API keys. Keys are stored securely and used for trading analysis.</p>
                     </div>
 

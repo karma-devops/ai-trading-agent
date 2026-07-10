@@ -70,7 +70,10 @@ from src.utils.secrets_manager import (
     set_api_key,
     delete_api_key,
     validate_api_key_format,
-    load_secrets_to_env
+    load_secrets_to_env,
+    get_trading_credentials,
+    set_trading_credential,
+    delete_trading_credential,
 )
 from src.utils.tier_manager import (
     get_user_tier,
@@ -592,6 +595,25 @@ def get_backtest_console_logs():
 # ============================================================================
 # IMPORT TRADING FUNCTIONS (Favoring src module)
 # ============================================================================
+def _get_hl_private_key():
+    """Module-level helper: read HL private key from secrets JSON, then env, then legacy."""
+    try:
+        from src.utils.secrets_manager import load_secrets
+        secrets = load_secrets()
+        trading_keys = secrets.get("trading_keys", {})
+        key = trading_keys.get("hyperliquid_private_key")
+        if key:
+            return key.strip().replace('"', '').replace("'", "")
+    except Exception:
+        pass
+    key = os.getenv("HYPER_LIQUID_ETH_PRIVATE_KEY", "")
+    if not key:
+        key = os.getenv("HYPER_LIQUID_KEY", "")  # legacy fallback
+    if key:
+        return key.strip().replace('"', '').replace("'", "")
+    return ""
+
+
 EXCHANGE_CONNECTED = False
 try:
     # 1. Prioritize importing from the src module
@@ -600,11 +622,30 @@ try:
 
     def _get_account():
         """Standardized key lookup for dashboard and agent"""
-        key = os.getenv("HYPER_LIQUID_ETH_PRIVATE_KEY", "")
+        from src.utils.secrets_manager import load_secrets
+        secrets = load_secrets()
+        trading_keys = secrets.get("trading_keys", {})
+        key = trading_keys.get("hyperliquid_private_key")
+        if not key:
+            key = os.getenv("HYPER_LIQUID_ETH_PRIVATE_KEY", "")
+        if not key:
+            key = os.getenv("HYPER_LIQUID_KEY", "")  # legacy fallback
         clean_key = key.strip().replace('"', '').replace("'", "")
         if not clean_key:
-            raise ValueError("HYPER_LIQUID_ETH_PRIVATE_KEY missing in .env")
+            raise ValueError("HyperLiquid private key not found. Set it in Account > Secrets or via HYPER_LIQUID_ETH_PRIVATE_KEY env var.")
         return Account.from_key(clean_key)
+
+    def _get_wallet_address(account=None):
+        """Get the HyperLiquid wallet address for queries (signing key vs master account)."""
+        from src.utils.secrets_manager import load_secrets
+        secrets = load_secrets()
+        trading_keys = secrets.get("trading_keys", {})
+        addr = trading_keys.get("hyperliquid_wallet_address")
+        if not addr:
+            addr = os.getenv("ACCOUNT_ADDRESS", "")
+        if not addr and account:
+            addr = account.address
+        return addr
 
     EXCHANGE_CONNECTED = True
     print("✅ HyperLiquid functions loaded")
@@ -616,7 +657,14 @@ except ImportError:
         from eth_account import Account
 
         def _get_account():
-            key = os.getenv("HYPER_LIQUID_ETH_PRIVATE_KEY", "")
+            from src.utils.secrets_manager import load_secrets
+            secrets = load_secrets()
+            trading_keys = secrets.get("trading_keys", {})
+            key = trading_keys.get("hyperliquid_private_key")
+            if not key:
+                key = os.getenv("HYPER_LIQUID_ETH_PRIVATE_KEY", "")
+            if not key:
+                key = os.getenv("HYPER_LIQUID_KEY", "")  # legacy fallback
             clean_key = key.strip().replace('"', '').replace("'", "")
             return Account.from_key(clean_key)
 
@@ -653,9 +701,7 @@ def get_account_data():
     
     try:
         account = _get_account()
-        address = os.getenv("ACCOUNT_ADDRESS", account.address)
-        
-        # Get live data using the correct function names
+        address = _get_wallet_address(account)
         if hasattr(n, 'get_available_balance'):
             available_balance = float(n.get_available_balance(address))
         else:
@@ -706,9 +752,7 @@ def get_positions_data():
     try:
         # Get account
         account = _get_account()
-        address = os.getenv("ACCOUNT_ADDRESS", account.address)
-        
-        # Try WebSocket first for real-time data
+        address = _get_wallet_address(account)
         try:
             from src.websocket import get_data_manager, is_websocket_connected
             if is_websocket_connected():
@@ -749,7 +793,7 @@ def get_positions_data():
             print("⚠️ WebSocket module not available, falling back to API")
         except Exception as ws_err:
             print(f"⚠️ WebSocket error: {ws_err}, falling back to API")
-        address = os.getenv("ACCOUNT_ADDRESS", account.address)
+        address = _get_wallet_address(account)
 
         # Try WebSocket first for real-time data
         try:
@@ -1446,11 +1490,11 @@ def close_position_api(symbol):
 
         # Get account from environment
         from eth_account import Account
-        private_key = os.getenv("HYPER_LIQUID_ETH_PRIVATE_KEY")
+        private_key = _get_hl_private_key()
         if not private_key:
             return jsonify({
                 'success': False,
-                'message': 'Private key not configured'
+                'message': 'Private key not configured. Set it in Account > Secrets or .env'
             }), 500
 
         account = Account.from_key(private_key)
@@ -1488,11 +1532,11 @@ def close_all_positions_api():
 
         # Get account from environment
         from eth_account import Account
-        private_key = os.getenv("HYPER_LIQUID_ETH_PRIVATE_KEY")
+        private_key = _get_hl_private_key()
         if not private_key:
             return jsonify({
                 'success': False,
-                'message': 'Private key not configured'
+                'message': 'Private key not configured. Set it in Account > Secrets or .env'
             }), 500
 
         account = Account.from_key(private_key)
@@ -1882,7 +1926,7 @@ def emergency_stop():
             from eth_account import Account
 
             account = None
-            private_key = os.getenv("HYPER_LIQUID_ETH_PRIVATE_KEY", "")
+            private_key = _get_hl_private_key()
             if private_key:
                 account = Account.from_key(private_key)
 
@@ -2351,6 +2395,53 @@ def remove_secret(provider):
         }), 500
 
 
+# ============================================================================
+# TRADING CREDENTIALS (HyperLiquid)
+# ============================================================================
+
+@app.route('/api/trading-credentials', methods=['GET'])
+@login_required
+def get_trading_creds():
+    """Get status of HyperLiquid trading credentials."""
+    try:
+        creds = get_trading_credentials()
+        return jsonify({'success': True, 'credentials': creds})
+    except Exception as e:
+        print(f"❌ Error getting trading credentials: {e}")
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
+
+@app.route('/api/trading-credentials/<cred_id>', methods=['POST'])
+@login_required
+def update_trading_cred(cred_id):
+    """Set or update a HyperLiquid trading credential."""
+    try:
+        data = request.get_json()
+        value = data.get('value', '').strip()
+        if not value:
+            return jsonify({'success': False, 'message': 'Value is required'}), 400
+
+        success, error = set_trading_credential(cred_id, value)
+        if success:
+            return jsonify({'success': True, 'message': f'{cred_id} saved successfully'})
+        return jsonify({'success': False, 'message': error}), 500
+    except Exception as e:
+        print(f"❌ Error updating trading credential: {e}")
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
+
+@app.route('/api/trading-credentials/<cred_id>', methods=['DELETE'])
+@login_required
+def remove_trading_cred(cred_id):
+    """Delete a HyperLiquid trading credential."""
+    try:
+        success, error = delete_trading_credential(cred_id)
+        if success:
+            return jsonify({'success': True, 'message': f'{cred_id} removed'})
+        return jsonify({'success': False, 'message': error}), 500
+    except Exception as e:
+        print(f"❌ Error removing trading credential: {e}")
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
 # ============================================================================
 # TIER MANAGEMENT API
 # ============================================================================
