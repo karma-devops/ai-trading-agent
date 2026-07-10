@@ -132,15 +132,19 @@ def load_settings():
                 settings = json.load(f)
                 merged = DEFAULT_SETTINGS.copy()
                 merged.update(settings)
-                # Fall back to env vars for AI settings if not in JSON
-                if not merged.get('ai_provider') or merged['ai_provider'] == 'ollama':
-                    merged['ai_provider'] = os.getenv('AI_PROVIDER', merged.get('ai_provider', 'ollama'))
-                if not merged.get('ai_model') or merged['ai_model'] == 'kimi-k2.7-code':
-                    merged['ai_model'] = os.getenv('AI_MODEL', merged.get('ai_model', 'kimi-k2.7-code'))
-                if not merged.get('ai_base_url'):
-                    merged['ai_base_url'] = os.getenv('AI_BASE_URL', '')
-                if not merged.get('ai_api_key'):
-                    merged['ai_api_key'] = os.getenv('AI_API_KEY', '')
+                # AI settings: env vars always override JSON file values
+                env_provider = os.getenv('AI_PROVIDER', '')
+                env_model = os.getenv('AI_MODEL', '')
+                env_url = os.getenv('AI_BASE_URL', '')
+                env_key = os.getenv('AI_API_KEY', '')
+                if env_provider:
+                    merged['ai_provider'] = env_provider
+                if env_model:
+                    merged['ai_model'] = env_model
+                if env_url:
+                    merged['ai_base_url'] = env_url
+                if env_key:
+                    merged['ai_api_key'] = env_key
                 return merged
         else:
             # No settings file — use env vars with defaults
