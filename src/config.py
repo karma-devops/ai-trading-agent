@@ -3,6 +3,8 @@
 HyperLiquid-only private perps configuration.
 """
 
+import os
+
 # 🔄 Exchange Selection — HyperLiquid only
 EXCHANGE = 'hyperliquid'
 
@@ -131,3 +133,6 @@ CLOSED_POSITIONS_TXT = '777'
 minimum_trades_in_last_hour = 2
 MIN_TRADES_LAST_HOUR = 2
 REALTIME_CLIPS_ENABLED = False
+
+# Safety switch - true = log only, false = execute real trades
+DRY_RUN = os.getenv("DRY_RUN", "true").lower() == "true"

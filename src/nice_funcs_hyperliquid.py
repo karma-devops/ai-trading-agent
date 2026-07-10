@@ -21,6 +21,7 @@ import pandas_ta as ta
 import datetime
 from datetime import timedelta
 from termcolor import colored, cprint
+from src.config import DRY_RUN
 from eth_account.signers.local import LocalAccount
 import eth_account
 from hyperliquid.info import Info
@@ -536,6 +537,12 @@ def market_buy(symbol, usd_size, account, slippage=None):
     print(f'   Placing IOC buy at ${buy_price} (0.1% above ask ${ask})')
     print(f'   Position size: {pos_size} {symbol} (value: ${pos_size * buy_price:.2f})')
 
+    # DRY RUN safety: log only, do not submit to exchange
+    if DRY_RUN:
+        print(colored(f'🛑 DRY RUN: would BUY {pos_size} {symbol} at ${buy_price}', 'yellow'))
+        add_console_log(f"🛑 DRY RUN BUY {symbol} ${usd_size}", "warning")
+        return {'status': 'ok', 'dry_run': True}
+
     # Place IOC order above ask to ensure fill
     exchange = Exchange(account, constants.MAINNET_API_URL)
     order_result = exchange.order(symbol, True, pos_size, buy_price, {"limit": {"tif": "Ioc"}}, reduce_only=False)
@@ -601,6 +608,12 @@ def market_sell(symbol, usd_size, account, slippage=None):
 
     print(f'   Placing IOC sell at ${sell_price} (0.1% below bid ${bid})')
     print(f'   Position size: {pos_size} {symbol} (value: ${pos_size * sell_price:.2f})')
+
+    # DRY RUN safety: log only, do not submit to exchange
+    if DRY_RUN:
+        print(colored(f'🛑 DRY RUN: would SELL {pos_size} {symbol} at ${sell_price}', 'yellow'))
+        add_console_log(f"🛑 DRY RUN SELL {symbol} ${usd_size}", "warning")
+        return {'status': 'ok', 'dry_run': True}
 
     # Place IOC order below bid to ensure fill
     exchange = Exchange(account, constants.MAINNET_API_URL)
