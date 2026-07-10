@@ -84,6 +84,9 @@ HYPERLIQUID_TOKENS = {
 # Default settings - OPTIMIZED FOR TRADING
 # Uses OpenRouter with FREE DeepSeek V3.1 Nex-N1 as default
 DEFAULT_SETTINGS = {
+    # Strategy settings
+    "active_strategy": "Simple MA Crossover", # Selected strategy for strategy execution
+
     # Chart settings
     "timeframe": "30m",           # Default: 30 minutes (optimal for trading signals)
     "days_back": 2,               # Default: 2 days of historical data
@@ -420,6 +423,11 @@ def validate_swarm_models(models):
 def validate_settings(settings):
     """Validate settings dictionary"""
     errors = []
+
+    # Validate active_strategy
+    if "active_strategy" in settings:
+        if not isinstance(settings["active_strategy"], str) or not settings["active_strategy"].strip():
+            errors.append("active_strategy must be a non-empty string")
 
     # Validate timeframe
     if "timeframe" in settings and not validate_timeframe(settings["timeframe"]):

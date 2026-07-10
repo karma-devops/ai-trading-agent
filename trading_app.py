@@ -96,6 +96,8 @@ app.config['SECRET_KEY'] = flask_secret
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
+from werkzeug.security import generate_password_hash, check_password_hash
+
 # Login credentials (loaded from environment variables for security)
 VALID_CREDENTIALS = {
     'username': os.getenv('DASHBOARD_USERNAME', ''),
@@ -107,6 +109,16 @@ VALID_CREDENTIALS = {
 if not all(VALID_CREDENTIALS.values()):
     print("⚠️ WARNING: Dashboard credentials not fully configured in .env!")
     print("⚠️ Set DASHBOARD_USERNAME, DASHBOARD_EMAIL, and DASHBOARD_PASSWORD")
+
+# Securely hash password at startup to prevent plaintext memory comparison
+raw_pw = VALID_CREDENTIALS['password']
+if raw_pw:
+    if raw_pw.startswith(('pbkdf2:sha256:', 'scrypt:', 'argon2:')):
+        VALID_CREDENTIALS['password_hash'] = raw_pw
+    else:
+        VALID_CREDENTIALS['password_hash'] = generate_password_hash(raw_pw)
+else:
+    VALID_CREDENTIALS['password_hash'] = ''
 
 # Enable CORS
 CORS(app)
@@ -1144,14 +1156,14 @@ def api_login():
     username = data.get('username', '').strip()
     password = data.get('password', '').strip()
 
-    # Check credentials (username OR email, and password)
-    if ((username == VALID_CREDENTIALS['username'] or
-         username == VALID_CREDENTIALS['email']) and
-        password == VALID_CREDENTIALS['password']):
+    # Check credentials securely using salted hashing verification to prevent timing / memory leak attacks
+    is_valid_user = (username == VALID_CREDENTIALS['username'] or username == VALID_CREDENTIALS['email'])
+    is_valid_password = check_password_hash(VALID_CREDENTIALS['password_hash'], password) if VALID_CREDENTIALS['password_hash'] else False
 
+    if is_valid_user and is_valid_password:
         session['logged_in'] = True
         session['username'] = VALID_CREDENTIALS['username']
-        add_console_log(f"User {VALID_CREDENTIALS['username']} logged in", "success")
+        add_console_log(f"User {VALID_CREDENTIALS['username']} logged in securely", "success")
 
         return jsonify({
             'success': True,
@@ -1678,6 +1690,73 @@ def get_agent_status():
         return jsonify({
             "agent_running": False,
             "error": str(e)
+        }), 500
+
+
+@app.route('/api/strategies', methods=['GET'])
+@login_required
+def get_strategies():
+    """List all available custom and system trading strategies"""
+    try:
+        strategies_list = ["Simple MA Crossover"]
+
+        # Scan src/strategies/ for other Python files
+        strategies_dir = Path("src/strategies")
+        if strategies_dir.exists():
+            for file_path in strategies_dir.glob("*.py"):
+                if file_path.name not in ["__init__.py", "base_strategy.py", "example_strategy.py"]:
+                    name = file_path.stem.replace("_", " ").title()
+                    strategies_list.append(name)
+
+        custom_dir = strategies_dir / "custom"
+        if custom_dir.exists():
+            for file_path in custom_dir.glob("*.py"):
+                if file_path.name not in ["__init__.py"]:
+                    name = file_path.stem.replace("_", " ").title()
+                    strategies_list.append(name)
+
+        strategies_list = list(dict.fromkeys(strategies_list))
+        return jsonify({
+            "success": True,
+            "strategies": strategies_list
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"Error scanning strategies: {str(e)}"
+        }), 500
+
+
+@app.route('/api/tokens/add', methods=['POST'])
+@login_required
+def add_custom_token():
+    """Allow users to easily add any custom token to Hyperliquid monitoring list"""
+    try:
+        data = request.get_json()
+        new_symbol = data.get("symbol", "").strip().upper()
+        if not new_symbol:
+            return jsonify({
+                "success": False,
+                "message": "Token symbol cannot be empty"
+            }), 400
+
+        user_settings = load_settings()
+        monitored = user_settings.get("monitored_tokens", [])
+        if new_symbol not in monitored:
+            monitored.append(new_symbol)
+            user_settings["monitored_tokens"] = monitored
+            save_settings(user_settings)
+            add_console_log(f"Token {new_symbol} added to Hyperliquid monitoring list", "success")
+
+        return jsonify({
+            "success": True,
+            "message": f"Successfully added {new_symbol} to monitored tokens",
+            "monitored_tokens": monitored
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"Error adding custom token: {str(e)}"
         }), 500
 
 
