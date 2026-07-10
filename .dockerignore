@@ -34,3 +34,8 @@ data/*.sqlite3
 
 # Docker itself
 docker-compose.override.yml
+
+# Large generated/test data not needed at runtime
+src/data/
+trading_venv/
+*.html        # stray backtest report files
