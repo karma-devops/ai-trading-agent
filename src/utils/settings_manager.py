@@ -109,6 +109,9 @@ DEFAULT_SETTINGS = {
     # Strategy settings
     "active_strategy": "confidence_ai", # Selected strategy: confidence_ai | engine_v6_1 | engine_v1 | engine_v1_3
 
+    # P&L calculation
+    "starting_balance": 10.0,  # Initial USDC deposit, used for PnL % calculation
+
     # Swarm AI Model settings (for multi-agent mode) - MAX 6 MODELS
     "swarm_models": [
         {"provider": "ollama", "model": "kimi-k2.7-code", "base_url": "", "api_key": "", "temperature": 0.5, "max_tokens": 2048},

@@ -713,8 +713,9 @@ def get_account_data():
         else:
             total_equity = 10.0
         
-        # Calculate PnL (starting balance from config or default $10)
-        starting_balance = 10.0
+        # Calculate PnL using starting balance from settings (default 10.0)
+        user_settings = load_settings()
+        starting_balance = float(user_settings.get('starting_balance', 10.0))
         pnl = total_equity - starting_balance
         
         # Save to history

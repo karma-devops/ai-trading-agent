@@ -160,7 +160,9 @@ function updatePnL(pnl) {
     pnlEl.className = `value pnl ${pnlClass}`;
     pnlEl.textContent = `${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}`;
     
-    const pnlPct = ((pnl / 10) * 100).toFixed(2); // Assuming $10 starting balance
+    // Use starting balance from settings (default 10)
+    const startingBalance = parseFloat(localStorage.getItem('starting_balance') || 10);
+    const pnlPct = startingBalance > 0 ? ((pnl / startingBalance) * 100).toFixed(2) : '0.00';
     pnlPctEl.className = `sublabel ${pnlClass}`;
     pnlPctEl.textContent = `${pnl >= 0 ? '+' : ''}${pnlPct}%`;
 }
@@ -780,7 +782,7 @@ function applySettings(settings) {
     // Strategy setting
     const stratSelect = document.getElementById('strategy-select');
     if (stratSelect) {
-        stratSelect.value = settings.active_strategy || 'Simple MA Crossover';
+        stratSelect.value = settings.active_strategy || 'confidence_ai';
     }
 
     // Chart settings
@@ -808,9 +810,15 @@ function applySettings(settings) {
     document.getElementById('ai-base-url').value = settings.ai_base_url || '';
     document.getElementById('ai-api-key').value = settings.ai_api_key || '';
 
-    // Strategy selection
-    document.getElementById('strategy-select').value = settings.active_strategy || 'confidence_ai';
+    // Strategy hint
     updateStrategyHint();
+
+    // Starting balance
+    const sbInput = document.getElementById('starting-balance-input');
+    if (sbInput) {
+        sbInput.value = settings.starting_balance || 10;
+        localStorage.setItem('starting_balance', settings.starting_balance || 10);
+    }
 
     // Temperature and max tokens
     const tempValue = Math.round((settings.ai_temperature || 0.3) * 100);
@@ -1184,7 +1192,10 @@ async function saveSettings() {
         ai_api_key: document.getElementById('ai-api-key').value.trim(),
 
         // Swarm models
-        swarm_models: collectSwarmModels()
+        swarm_models: collectSwarmModels(),
+
+        // Starting balance for PnL calculation
+        starting_balance: parseFloat(document.getElementById('starting-balance-input')?.value || 10),
     };
 
     try {
