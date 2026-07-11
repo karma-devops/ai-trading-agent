@@ -1710,8 +1710,52 @@ Return ONLY valid JSON with the following structure:
         lines.append(f"- Timestamp: {strategy_context.get('timestamp')}")
 
         return "\n".join(lines), strategy_context
-   
 
+    def _amplify_confidence(self, llm_action, llm_confidence, signal_bias, signal_confidence):
+        """
+        Blend LLM confidence with strategy/engine signal confidence.
+
+        When the LLM and strategy agree, the signal boosts the LLM confidence.
+        When they disagree, the signal drags the confidence down.
+        The LLM always keeps direction control; this only adjusts magnitude.
+        """
+        if not signal_bias or signal_confidence is None:
+            return llm_confidence
+
+        try:
+            signal_confidence = float(signal_confidence)
+        except Exception:
+            return llm_confidence
+
+        if not (0.0 <= signal_confidence <= 1.0):
+            signal_confidence = min(max(signal_confidence / 100.0, 0.0), 1.0)
+
+        llm_action = (llm_action or "NOTHING").upper().strip()
+        signal_bias = (signal_bias or "NOTHING").upper().strip()
+
+        # Nothing signal provides no amplification
+        if signal_bias == "NOTHING" or signal_bias == "NEUTRAL":
+            return llm_confidence
+
+        # Map actions to normalized sides
+        signal_side = "LONG" if signal_bias in ("BUY", "LONG") else "SHORT" if signal_bias in ("SELL", "SHORT") else "NEUTRAL"
+        llm_side = "LONG" if llm_action in ("BUY", "LONG") else "SHORT" if llm_action in ("SELL", "SHORT") else "NEUTRAL"
+
+        # Weight: how much the signal influences the final confidence.
+        # Keep below 0.5 so the LLM remains the primary decision maker.
+        blend_weight = 0.35
+
+        if llm_side == "NEUTRAL":
+            # A strong signal can pull a NOTHING toward a modest directional confidence
+            return int(min(100, max(0, llm_confidence + signal_confidence * 100 * blend_weight)))
+
+        if llm_side == signal_side:
+            # Agree: boost toward signal strength
+            return int(min(100, max(0, llm_confidence + (signal_confidence * 100 - llm_confidence) * blend_weight)))
+        else:
+            # Disagree: dampen confidence
+            return int(min(100, max(0, llm_confidence * (1 - signal_confidence * blend_weight))))
+   
    
     def _compute_engine_signals(self, market_data: dict) -> dict:
         """Generate Engine v6.1 signals from OHLCV market data."""
@@ -1735,8 +1779,8 @@ Return ONLY valid JSON with the following structure:
                 cprint(f"⚠️ Engine v6.1 failed for {token}: {e}", "yellow")
         return signals
 
-    def analyze_market_data(self, token, market_data):
-        """Analyze market data using AI model (single or swarm mode)"""
+    def analyze_market_data(self, token, market_data, strategy_signals=None):
+        """Analyze market data using AI model (single or swarm mode)."""
         try:
             if token in EXCLUDED_TOKENS:
                 print(f"⚠️ Skipping analysis for excluded token: {token}")
@@ -1846,6 +1890,16 @@ Return ONLY valid JSON with the following structure:
                         strategy_context_text, strategy_context_json = self._format_strategy_context_text(strat_obj)
                         add_console_log("Strategies loaded", "success")
 
+                    elif strategy_signals:
+                        # Use injected engine / external strategy signals in enriched shape
+                        try:
+                            strategy_context_text, strategy_context_json = self._format_strategy_context_text(strategy_signals)
+                            add_console_log("Injected strategy signals loaded", "success")
+                        except Exception as e:
+                            cprint(f"⚠️ Error formatting injected strategy signals: {e}", "yellow")
+                            strategy_context_text = "Strategy Signals Available:\n" + json.dumps(strategy_signals, indent=2, default=str)
+                            strategy_context_json = {"injected_signals": strategy_signals}
+
                     else:
                         # fallback to legacy market_data['strategy_signals'] if present
                         if isinstance(market_data, dict) and "strategy_signals" in market_data:
@@ -1891,6 +1945,15 @@ Return ONLY valid JSON with the following structure:
                             confidence = int("".join(filter(str.isdigit, line)))
                         except Exception:
                             confidence = 50
+
+                # Amplify LLM confidence with injected strategy/engine signal
+                if strategy_signals:
+                    confidence = self._amplify_confidence(
+                        llm_action=action,
+                        llm_confidence=confidence,
+                        signal_bias=strategy_signals.get("aggregate", {}).get("direction_bias"),
+                        signal_confidence=strategy_signals.get("aggregate", {}).get("confidence", 0),
+                    )
 
                 reasoning = (
                     "\n".join(lines[1:]) if len(lines) > 1 else "No detailed reasoning provided"
@@ -2972,7 +3035,10 @@ Return ONLY valid JSON with the following structure:
             # STEP 5: ANALYZE TOKENS FOR NEW ENTRIES
             cprint("\n📈 Analyzing tokens for new entry opportunities...", "white", "on_blue")
 
-            # Engine path: generate technical signals, then AI confirms high-confidence ones
+            # Engine path: generate technical signals, then route them through the
+            # LLM analysis so the strategy signal AMPLIFIES the AI confidence (original
+            # pulse-graph-enhancements behavior). Falls back to raw engine execution
+            # when no AI model is available.
             if self.active_strategy in ('engine_v6_1', 'engine_v1', 'engine_v1_3') and self.strategy_engine:
                 add_console_log(f"🚀 {self.active_strategy} generating technical signals", "info")
                 engine_signals = self._compute_engine_signals(market_data)
@@ -2980,97 +3046,69 @@ Return ONLY valid JSON with the following structure:
                 add_console_log(f"  {len(engine_signals)} tokens analyzed, {signal_count} signals generated", "info")
 
                 for token, sig in engine_signals.items():
-                    if sig["direction"] in ("BUY", "SELL"):
-                        confidence = int(sig["signal"] * 100)
-                        reasoning = f"{self.active_strategy} | ADX={sig['metadata']['adx']} | fast={sig['metadata']['fast_ema']} medm={sig['metadata']['medm_ema']} slow={sig['metadata']['slow_sma']}"
+                    if self.should_stop():
+                        add_console_log(f"ℹ️ Stop signal received - stopping engine analysis at {token}", "warning")
+                        return
 
-                        # High confidence (>90%) → AI confirmation
-                        if confidence >= 90 and self.model:
-                            add_console_log(f"  {token}: {sig['direction']} {confidence}% — sending to AI for confirmation", "info")
-                            try:
-                                ai_prompt = f"""You are a trading confirmation system. A technical strategy engine has generated a signal:
+                    if sig["direction"] not in ("BUY", "SELL"):
+                        continue
 
-Token: {token}
-Direction: {sig['direction']}
-Confidence: {confidence}%
-Strategy: {self.active_strategy}
-Indicators: ADX={sig['metadata']['adx']}, EMA fast={sig['metadata']['fast_ema']}, EMA med={sig['metadata']['medm_ema']}, SMA slow={sig['metadata']['slow_sma']}
+                    # Build enriched context in the same shape StrategyAgent uses,
+                    # so the LLM prompt sees the engine signal as strategy intelligence.
+                    metadata = sig.get("metadata", {})
+                    engine_confidence = float(sig.get("signal", 0) or 0)
+                    risk_notes = " | ".join(
+                        f"{k}={metadata.get(k)}"
+                        for k in ("adx", "fast_ema", "medm_ema", "slow_sma", "di_plus", "di_minus")
+                        if metadata.get(k) is not None
+                    )
+                    enriched_context = {
+                        "token": token,
+                        "strategies": [
+                            {
+                                "name": self.active_strategy,
+                                "direction": sig["direction"],
+                                "confidence": engine_confidence,
+                                "suggested_allocation_pct": 0.0,
+                                "time_horizon": "short",
+                                "risk_notes": risk_notes or "technical engine signal",
+                            }
+                        ],
+                        "aggregate": {
+                            "direction_bias": sig["direction"],
+                            "confidence": engine_confidence,
+                            "suggested_allocation_pct": 0.0,
+                            "conflict_level": "none",
+                            "notes": f"Generated by {self.active_strategy} engine",
+                        },
+                        "timestamp": datetime.utcnow().isoformat() + "Z",
+                    }
 
-Current market data is available. Based on the technical indicators, should this trade be executed?
-
-Reply in JSON: {{"confirm": true/false, "confidence": 0-100, "reason": "brief explanation"}}"""
-
-                                ai_resp = self.model.generate_response(
-                                    system_prompt="You are a trading confirmation AI. Analyze technical signals and confirm or reject trades. Always reply in JSON.",
-                                    user_content=ai_prompt,
-                                    temperature=0.3,
-                                    max_tokens=200
-                                )
-
-                                ai_text = getattr(ai_resp, 'content', '') if ai_resp else ''
-
-                                # Parse AI response
-                                import json as _json
-                                try:
-                                    # Extract JSON from response
-                                    if '```json' in ai_text:
-                                        ai_text = ai_text.split('```json')[1].split('```')[0].strip()
-                                    elif '```' in ai_text:
-                                        ai_text = ai_text.split('```')[1].split('```')[0].strip()
-                                    ai_decision = _json.loads(ai_text)
-                                    ai_confirm = ai_decision.get('confirm', False)
-                                    ai_confidence = ai_decision.get('confidence', 0)
-                                    ai_reason = ai_decision.get('reason', '')
-                                except Exception:
-                                    # If AI response can't be parsed, fall back to engine signal
-                                    ai_confirm = True
-                                    ai_confidence = confidence
-                                    ai_reason = "AI parse failed, using engine signal"
-
-                                if ai_confirm:
-                                    final_confidence = max(confidence, ai_confidence)
-                                    self.recommendations_df = pd.concat([
-                                        self.recommendations_df,
-                                        pd.DataFrame([{
-                                            "token": token,
-                                            "action": sig["direction"],
-                                            "confidence": final_confidence,
-                                            "reasoning": f"{reasoning} | AI: {ai_reason}",
-                                        }]),
-                                    ], ignore_index=True)
-                                    add_console_log(f"  ✅ {token}: {sig['direction']} confirmed by AI ({ai_confidence}%) — {ai_reason[:60]}", "success")
-                                else:
-                                    add_console_log(f"  ❌ {token}: AI rejected {sig['direction']} — {ai_reason[:60]}", "warning")
-
-                            except Exception as ai_err:
-                                # AI confirmation failed — fall back to engine signal
-                                add_console_log(f"  ⚠️ AI confirmation error for {token}, using engine signal: {ai_err}", "warning")
-                                self.recommendations_df = pd.concat([
-                                    self.recommendations_df,
-                                    pd.DataFrame([{
-                                        "token": token,
-                                        "action": sig["direction"],
-                                        "confidence": confidence,
-                                        "reasoning": reasoning,
-                                    }]),
-                                ], ignore_index=True)
-                                add_console_log(f"  {self.active_strategy} {token} -> {sig['direction']} | {confidence}%", "success")
-
-                        else:
-                            # Confidence < 90% or no AI model — use engine signal directly
-                            self.recommendations_df = pd.concat([
-                                self.recommendations_df,
-                                pd.DataFrame([{
-                                    "token": token,
-                                    "action": sig["direction"],
-                                    "confidence": confidence,
-                                    "reasoning": reasoning,
-                                }]),
-                            ], ignore_index=True)
-                            if confidence >= 90:
-                                add_console_log(f"  {token}: {sig['direction']} {confidence}% (no AI model — executing on engine signal)", "success")
-                            else:
-                                add_console_log(f"  {token}: {sig['direction']} {confidence}% (below 90% threshold — no AI confirmation needed)", "info")
+                    if self.model:
+                        add_console_log(f"  {token}: {sig['direction']} {int(engine_confidence * 100)}% — routing to LLM for confidence amplification", "info")
+                        data = market_data.get(token)
+                        if data is None:
+                            continue
+                        analysis = self.analyze_market_data(token, data, strategy_signals=enriched_context)
+                        if analysis:
+                            print(f"\n📈 Engine + LLM analysis for {token}:")
+                            print(analysis)
+                            print("\n" + "=" * 50 + "\n")
+                    else:
+                        # No AI model available — execute raw engine signal (engine strategies
+                        # are designed to work without AI).
+                        confidence = int(engine_confidence * 100)
+                        reasoning = f"{self.active_strategy} | {risk_notes}"
+                        self.recommendations_df = pd.concat([
+                            self.recommendations_df,
+                            pd.DataFrame([{
+                                "token": token,
+                                "action": sig["direction"],
+                                "confidence": confidence,
+                                "reasoning": reasoning,
+                            }]),
+                        ], ignore_index=True)
+                        add_console_log(f"  {token}: {sig['direction']} {confidence}% (no AI model — executing on engine signal)", "success")
             else:
                 for token, data in market_data.items():
                     if self.should_stop():

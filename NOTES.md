@@ -40,6 +40,27 @@
 - Awaiting results for remaining hardening items
 
 ### TODO
+- [x] Restore original pulse-graph-enhancements flow: engine signals feed LLM and amplify confidence
 - [ ] Review subagent audit findings and patch critical issues
 - [ ] Update HYPER_LIQUID_ETH_PRIVATE_KEY in EasyPanel env to new API secret
 - [ ] Final rebuild and verify live trading works end-to-end
+
+### Current Session Work (2026-07-10 continued)
+**Problem:** Engine strategies (`engine_v1_3`, `engine_v1`, `engine_v6_1`) bypassed the LLM entirely. They generated raw technical signals, converted `signal` (0..1) to a percentage, and executed directly. AI was only used as a rubber-stamp for >90% signals.
+
+**Fix in `src/agents/trading_agent.py`:**
+1. Added `strategy_signals` parameter to `analyze_market_data()`.
+2. Engine path now builds an enriched context in the same shape `StrategyAgent.get_enriched_context()` uses and passes it to `analyze_market_data()`.
+3. Added `_amplify_confidence()` helper: blends LLM confidence with engine signal confidence.
+   - Agreement boosts confidence toward the engine signal strength.
+   - Disagreement dampens confidence.
+   - LLM keeps final direction control; only magnitude is adjusted.
+   - `NEUTRAL` engine signal provides no amplification.
+4. Falls back to raw engine execution when no AI model is available.
+
+**Verification:**
+- `python -m py_compile src/agents/trading_agent.py` passes.
+- Mock integration test: LLM 60% BUY + engine 85% BUY → final 68% (amplified).
+- Mock integration test: LLM 70% BUY + engine 80% SELL → final 50% (dampened, direction still BUY).
+
+**Backup:** `src/agents/trading_agent.py.bak-20260710-194124`
