@@ -101,7 +101,8 @@ AI_MODEL_TYPE = os.getenv('AI_PROVIDER', 'ollama')
 AI_MODEL = os.getenv('AI_MODEL', 'kimi-k2.7-code')
 AI_BASE_URL = os.getenv('AI_BASE_URL', '')
 AI_API_KEY = os.getenv('AI_API_KEY', '')
-AI_MAX_TOKENS = 8024
+AI_MAX_TOKENS = int(os.getenv('AI_MAX_TOKENS', '8024'))
+SWARM_MAX_TOKENS = int(os.getenv('SWARM_MAX_TOKENS', '4096'))
 AI_TEMPERATURE = 0.6
 
 # Alternative defaults
@@ -112,6 +113,14 @@ ALT_AI_BASE_URL = "https://openrouter.ai/api/v1"
 # Trading Strategy Agent Settings
 ENABLE_STRATEGIES = True
 STRATEGY_MIN_CONFIDENCE = 0.6   # 60% confidence threshold
+
+# Engine signal amplification defaults (env overrides)
+STRATEGY_SIGNAL_WEIGHT = float(os.getenv("STRATEGY_SIGNAL_WEIGHT", "0.35"))
+ENGINE_SIGNAL_RECENCY_MINUTES = int(os.getenv("ENGINE_SIGNAL_RECENCY_MINUTES", "15"))
+ENGINE_NO_SIGNAL_DAMPEN_FACTOR = float(os.getenv("ENGINE_NO_SIGNAL_DAMPEN_FACTOR", "0.85"))
+ENGINE_SUPER_RECENT_SECONDS = int(os.getenv("ENGINE_SUPER_RECENT_SECONDS", "30"))
+ENGINE_SUPER_RECENT_WEIGHT = float(os.getenv("ENGINE_SUPER_RECENT_WEIGHT", "0.85"))
+MIN_TRADE_CONFIDENCE = int(os.getenv("MIN_TRADE_CONFIDENCE", "65"))
 
 # ⚡ WebSocket Settings (Real-time data feeds)
 USE_WEBSOCKET_FEEDS = True

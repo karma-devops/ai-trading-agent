@@ -87,6 +87,18 @@ DEFAULT_SETTINGS = {
     # Strategy settings
     "active_strategy": "Simple MA Crossover", # Selected strategy for strategy execution
 
+    # Engine signal amplification settings
+    "strategy_signal_weight": 0.35,
+    "engine_signal_recency_minutes": 15,
+    "engine_no_signal_dampen_factor": 0.85,
+    "engine_super_recent_seconds": 30,
+    "engine_super_recent_weight": 0.85,
+    "min_trade_confidence": 65,
+
+    # AI token limits
+    "ai_max_tokens": 2048,
+    "swarm_max_tokens": 4096,
+
     # Chart settings
     "timeframe": "30m",           # Default: 30 minutes (optimal for trading signals)
     "days_back": 2,               # Default: 2 days of historical data
@@ -527,6 +539,58 @@ def validate_settings(settings):
     # Validate AI max tokens
     if "ai_max_tokens" in settings and not validate_ai_max_tokens(settings["ai_max_tokens"]):
         errors.append("ai_max_tokens must be between 100 and 100000")
+
+    if "swarm_max_tokens" in settings and not validate_ai_max_tokens(settings["swarm_max_tokens"]):
+        errors.append("swarm_max_tokens must be between 100 and 100000")
+
+    # Engine strategy signal settings
+    if "strategy_signal_weight" in settings:
+        try:
+            v = float(settings["strategy_signal_weight"])
+            if not (0.0 <= v <= 1.0):
+                errors.append("strategy_signal_weight must be 0.0-1.0")
+        except (ValueError, TypeError):
+            errors.append("strategy_signal_weight must be a number")
+
+    if "engine_signal_recency_minutes" in settings:
+        try:
+            v = int(settings["engine_signal_recency_minutes"])
+            if not (1 <= v <= 1440):
+                errors.append("engine_signal_recency_minutes must be 1-1440")
+        except (ValueError, TypeError):
+            errors.append("engine_signal_recency_minutes must be an integer")
+
+    if "engine_no_signal_dampen_factor" in settings:
+        try:
+            v = float(settings["engine_no_signal_dampen_factor"])
+            if not (0.0 <= v <= 1.0):
+                errors.append("engine_no_signal_dampen_factor must be 0.0-1.0")
+        except (ValueError, TypeError):
+            errors.append("engine_no_signal_dampen_factor must be a number")
+
+    if "engine_super_recent_seconds" in settings:
+        try:
+            v = int(settings["engine_super_recent_seconds"])
+            if not (5 <= v <= 300):
+                errors.append("engine_super_recent_seconds must be 5-300")
+        except (ValueError, TypeError):
+            errors.append("engine_super_recent_seconds must be an integer")
+
+    if "engine_super_recent_weight" in settings:
+        try:
+            v = float(settings["engine_super_recent_weight"])
+            if not (0.0 <= v <= 1.0):
+                errors.append("engine_super_recent_weight must be 0.0-1.0")
+        except (ValueError, TypeError):
+            errors.append("engine_super_recent_weight must be a number")
+
+    if "min_trade_confidence" in settings:
+        try:
+            v = int(settings["min_trade_confidence"])
+            if not (0 <= v <= 100):
+                errors.append("min_trade_confidence must be 0-100")
+        except (ValueError, TypeError):
+            errors.append("min_trade_confidence must be an integer")
 
     # Validate swarm_models if present
     if "swarm_models" in settings:

@@ -553,6 +553,31 @@ async function clearConsole() {
     }
 }
 
+// Copy console logs to clipboard
+async function copyConsole() {
+    try {
+        const response = await fetch('/api/console');
+        const data = await response.json();
+
+        const logs = Array.isArray(data) ? data : (data.logs || []);
+        if (!Array.isArray(logs)) {
+            throw new Error('Unexpected console response');
+        }
+
+        const text = logs.map(entry => {
+            const ts = entry.timestamp || '';
+            const msg = entry.message || '';
+            return ts ? `[${ts}] ${msg}` : msg;
+        }).join('\n');
+
+        await navigator.clipboard.writeText(text);
+        addConsoleMessage('Console logs copied to clipboard', 'success');
+    } catch (error) {
+        console.error('Error copying console:', error);
+        addConsoleMessage('Failed to copy console logs', 'error');
+    }
+}
+
 // Run agent
 async function runAgent() {
     try {
@@ -843,15 +868,24 @@ function applySettings(settings) {
         localStorage.setItem('starting_balance', settings.starting_balance || 10);
     }
 
+    // Engine signal amplification settings
+    document.getElementById('strategy-signal-weight').value = settings.strategy_signal_weight ?? 0.35;
+    document.getElementById('engine-super-recent-weight').value = settings.engine_super_recent_weight ?? 0.85;
+    document.getElementById('engine-super-recent-seconds').value = settings.engine_super_recent_seconds ?? 30;
+    document.getElementById('engine-signal-recency-minutes').value = settings.engine_signal_recency_minutes ?? 15;
+    document.getElementById('engine-no-signal-dampen').value = settings.engine_no_signal_dampen_factor ?? 0.85;
+    document.getElementById('min-trade-confidence').value = settings.min_trade_confidence ?? 65;
+
     // Temperature and max tokens
     const tempValue = Math.round((settings.ai_temperature || 0.3) * 100);
     document.getElementById('main-temperature').value = tempValue;
     updateSliderValue('main-temperature', 'main-temp-value');
 
     document.getElementById('main-max-tokens').value = settings.ai_max_tokens || 2000;
+    document.getElementById('swarm-max-tokens').value = settings.swarm_max_tokens || 4096;
 
-    // Swarm models - Default to 4 FREE OpenRouter models for cost-effective consensus
-    // Source: https://openrouter.ai/collections/free-models
+    // Swarm models
+
     swarmModels = settings.swarm_models || [
         { provider: 'openrouter', model: 'nex-agi/deepseek-v3.1-nex-n1:free', temperature: 0.5, max_tokens: 2048 },
         { provider: 'openrouter', model: 'xiaomi/mimo-v2-flash:free', temperature: 0.5, max_tokens: 2048 },
@@ -1342,6 +1376,16 @@ async function saveSettings() {
 
         // Starting balance for PnL calculation
         starting_balance: parseFloat(document.getElementById('starting-balance-input')?.value || 10),
+
+        // Engine signal amplification settings
+        strategy_signal_weight: parseFloat(document.getElementById('strategy-signal-weight')?.value ?? 0.35),
+        engine_super_recent_weight: parseFloat(document.getElementById('engine-super-recent-weight')?.value ?? 0.85),
+        engine_super_recent_seconds: parseInt(document.getElementById('engine-super-recent-seconds')?.value ?? 30),
+        engine_signal_recency_minutes: parseInt(document.getElementById('engine-signal-recency-minutes')?.value ?? 15),
+        engine_no_signal_dampen_factor: parseFloat(document.getElementById('engine-no-signal-dampen')?.value ?? 0.85),
+        min_trade_confidence: parseInt(document.getElementById('min-trade-confidence')?.value ?? 65),
+
+        swarm_max_tokens: parseInt(document.getElementById('swarm-max-tokens')?.value ?? 4096),
     };
 
     try {

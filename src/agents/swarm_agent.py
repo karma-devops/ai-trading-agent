@@ -111,16 +111,18 @@ RESULTS_DIR = Path(project_root) / "src" / "data" / "swarm_agent"
 class SwarmAgent:
     """Moon Dev's Swarm Agent for multi-model consensus"""
 
-    def __init__(self, custom_models: Optional[Dict] = None):
+    def __init__(self, custom_models: Optional[Dict] = None, max_tokens: int = DEFAULT_MAX_TOKENS):
         """
         Initialize the Swarm Agent
 
         Args:
             custom_models: Optional dict to override SWARM_MODELS configuration
+            max_tokens: Max tokens for each model response
         """
         self.models_config = custom_models or SWARM_MODELS
         self.active_models = {}
         self.results_dir = RESULTS_DIR
+        self.max_tokens = int(max_tokens)
 
         # Create results directory if saving is enabled
         if SAVE_RESULTS:
@@ -177,7 +179,7 @@ class SwarmAgent:
                 system_prompt=system_prompt,
                 user_content=prompt,
                 temperature=DEFAULT_TEMPERATURE,
-                max_tokens=DEFAULT_MAX_TOKENS
+                max_tokens=self.max_tokens
             )
 
             elapsed = time.time() - start_time

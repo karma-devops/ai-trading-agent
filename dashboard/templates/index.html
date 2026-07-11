@@ -122,7 +122,10 @@
                 <div class="card console-card">
                     <div class="card-header">
                         <h2>Agent Console</h2>
-                        <button class="btn-small" id="clear-console" onclick="clearConsole()">Clear</button>
+                        <div class="console-header-actions">
+                            <button class="btn-small" id="copy-console" onclick="copyConsole()">Copy</button>
+                            <button class="btn-small" id="clear-console" onclick="clearConsole()">Clear</button>
+                        </div>
                     </div>
                     <div class="console-output" id="console">
                         <div class="console-line">🌐 Dashboard initialized...</div>
@@ -344,8 +347,12 @@
                                     </div>
                                 </div>
                                 <div class="setting-group half">
-                                    <label for="main-max-tokens">Max Tokens</label>
+                                    <label for="main-max-tokens">Main Max Tokens</label>
                                     <input type="number" id="main-max-tokens" class="setting-input" min="100" max="100000" value="2000" />
+                                </div>
+                                <div class="setting-group half">
+                                    <label for="swarm-max-tokens">Swarm Max Tokens</label>
+                                    <input type="number" id="swarm-max-tokens" class="setting-input" min="100" max="100000" value="4096" />
                                 </div>
                             </div>
                         </div>
@@ -406,6 +413,65 @@
                         <div class="setting-group">
                             <label for="ai-api-key">API Key</label>
                             <input type="password" id="ai-api-key" class="setting-input" placeholder="Leave blank to use .env value" />
+                        </div>
+                    </div>
+
+                    <div class="setting-section">
+                        <h3 class="section-title">Engine Signal Amplification</h3>
+                        <p class="section-desc">How the engine strategy biases the AI confidence</p>
+
+                        <div class="setting-row">
+                            <div class="setting-group half">
+                                <label for="strategy-signal-weight">Signal Weight (0.0–1.0)</label>
+                                <div class="input-with-hint">
+                                    <input type="number" id="strategy-signal-weight" class="setting-input" min="0" max="1" step="0.05" value="0.35" />
+                                    <span class="input-hint">Weight for normal recent signals</span>
+                                </div>
+                            </div>
+                            <div class="setting-group half">
+                                <label for="engine-super-recent-weight">Super-Recent Weight (0.0–1.0)</label>
+                                <div class="input-with-hint">
+                                    <input type="number" id="engine-super-recent-weight" class="setting-input" min="0" max="1" step="0.05" value="0.85" />
+                                    <span class="input-hint">Weight for signals in last 30s</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="setting-row">
+                            <div class="setting-group half">
+                                <label for="engine-super-recent-seconds">Super-Recent Window (seconds)</label>
+                                <div class="input-with-hint">
+                                    <input type="number" id="engine-super-recent-seconds" class="setting-input" min="5" max="300" step="5" value="30" />
+                                    <span class="input-hint">Window for super-recent signals</span>
+                                </div>
+                            </div>
+                            <div class="setting-group half">
+                                <label for="engine-signal-recency-minutes">Signal Recency (minutes)</label>
+                                <div class="input-with-hint">
+                                    <input type="number" id="engine-signal-recency-minutes" class="setting-input" min="1" max="1440" step="1" value="15" />
+                                    <span class="input-hint">How long cached signals stay relevant</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="setting-group">
+                            <label for="engine-no-signal-dampen">No-Signal Dampen Factor (0.0–1.0)</label>
+                            <div class="input-with-hint">
+                                <input type="number" id="engine-no-signal-dampen" class="setting-input" min="0" max="1" step="0.05" value="0.85" />
+                                <span class="input-hint">Multiply LLM confidence by this when no engine signal exists</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="setting-section">
+                        <h3 class="section-title">Execution Thresholds</h3>
+
+                        <div class="setting-group">
+                            <label for="min-trade-confidence">Minimum Trade Confidence (%)</label>
+                            <div class="input-with-hint">
+                                <input type="number" id="min-trade-confidence" class="setting-input" min="0" max="100" step="1" value="65" />
+                                <span class="input-hint">Signals below this confidence become NOTHING</span>
+                            </div>
                         </div>
                     </div>
                 </div>

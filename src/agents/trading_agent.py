@@ -238,7 +238,7 @@ except Exception as e:
 # 🔧 TRADING AGENT CONFIGURATION
 # ============================================================================
 from eth_account import Account
-from src.config import EXCHANGE as CONFIG_EXCHANGE, HYPERLIQUID_LEVERAGE, MAX_POSITION_PCT, get_position_size_usd, DRY_RUN
+from src.config import EXCHANGE as CONFIG_EXCHANGE, HYPERLIQUID_LEVERAGE, MAX_POSITION_PCT, get_position_size_usd, DRY_RUN, STRATEGY_SIGNAL_WEIGHT, ENGINE_SIGNAL_RECENCY_MINUTES, ENGINE_NO_SIGNAL_DAMPEN_FACTOR, ENGINE_SUPER_RECENT_SECONDS, ENGINE_SUPER_RECENT_WEIGHT, MIN_TRADE_CONFIDENCE, SWARM_MAX_TOKENS
 
 # 🦈 EXCHANGE SELECTION - Import from config.py
 # Convert to uppercase for consistency with checks throughout this file
@@ -765,10 +765,10 @@ class TradingAgent:
 
             # Initialize SwarmAgent with custom models from user settings
             if custom_models:
-                self.swarm = SwarmAgent(custom_models=custom_models)
+                self.swarm = SwarmAgent(custom_models=custom_models, max_tokens=self.swarm_max_tokens)
                 cprint(f"✅ Swarm mode initialized with {num_models} user-configured AI models!", "green")
             else:
-                self.swarm = SwarmAgent()
+                self.swarm = SwarmAgent(max_tokens=self.swarm_max_tokens)
                 cprint("✅ Swarm mode initialized with default AI models!", "green")
 
             cprint("💼 Initializing fast model for portfolio calculations...", "cyan")
@@ -827,6 +827,18 @@ class TradingAgent:
         self.recommendations_df = pd.DataFrame(
             columns=["token", "action", "confidence", "reasoning"]
         )
+
+        # Engine signal settings
+        self.strategy_signal_weight = float(self.user_settings.get("strategy_signal_weight", STRATEGY_SIGNAL_WEIGHT))
+        self.engine_signal_recency_minutes = int(self.user_settings.get("engine_signal_recency_minutes", ENGINE_SIGNAL_RECENCY_MINUTES))
+        self.engine_no_signal_dampen_factor = float(self.user_settings.get("engine_no_signal_dampen_factor", ENGINE_NO_SIGNAL_DAMPEN_FACTOR))
+        self.engine_super_recent_seconds = int(self.user_settings.get("engine_super_recent_seconds", ENGINE_SUPER_RECENT_SECONDS))
+        self.engine_super_recent_weight = float(self.user_settings.get("engine_super_recent_weight", ENGINE_SUPER_RECENT_WEIGHT))
+        self.min_trade_confidence = int(self.user_settings.get("min_trade_confidence", MIN_TRADE_CONFIDENCE))
+        self.swarm_max_tokens = int(self.user_settings.get("swarm_max_tokens", SWARM_MAX_TOKENS))
+        
+        # Engine signal cache for recency-aware amplification
+        self.engine_signal_cache = {}
 
         # --- StrategyAgent (non-executing) ---
         try:
@@ -951,7 +963,10 @@ class TradingAgent:
             return None
 
     def _format_market_data_for_swarm(self, token, market_data):
-        """Format market data into a clean, readable format for swarm analysis"""
+        """Format market data into a clean, readable format for swarm analysis."""
+        # Cap LLM context to the last 96 bars to avoid max-token / context-window issues
+        # when days_back is large (e.g., 30 days of 15m data). Engine still sees full data.
+        LLM_CONTEXT_BARS = 96
         try:
             cprint(f"\n📊 MARKET DATA RECEIVED FOR {token[:8]}...", "cyan", attrs=["bold"])
             add_console_log(f"📊 MARKET DATA RECEIVED FOR {token[:8]}...", "info")
@@ -961,23 +976,26 @@ class TradingAgent:
                 cprint(f"📅 Date range: {market_data.index[0]} to {market_data.index[-1]}", "yellow")
                 cprint(f"🕐 Timeframe: {self.timeframe}", "yellow")
 
+                # Use only the most recent bars for LLM context
+                display_df = market_data.tail(LLM_CONTEXT_BARS)
+
                 cprint("\n📈 First 5 Bars (OHLCV):", "cyan")
-                print(market_data.head().to_string())
+                print(display_df.head().to_string())
 
                 cprint("\n📉 Last 3 Bars (Most Recent):", "cyan")
-                print(market_data.tail(3).to_string())
+                print(display_df.tail(3).to_string())
 
                 formatted = f"""
 TOKEN: {token}
 TIMEFRAME: {self.timeframe} bars
-TOTAL BARS: {len(market_data)}
-DATE RANGE: {market_data.index[0]} to {market_data.index[-1]}
+TOTAL BARS IN CONTEXT: {len(display_df)} (last {LLM_CONTEXT_BARS} of {len(market_data)})
+DATE RANGE: {display_df.index[0]} to {display_df.index[-1]}
 
 RECENT PRICE ACTION (Last 10 bars):
-{market_data.tail(10).to_string()}
+{display_df.tail(10).to_string()}
 
-FULL DATASET:
-{market_data.to_string()}
+FULL CONTEXT DATASET:
+{display_df.to_string()}
 """
             else:
                 cprint(f"⚠️ Market data is not a DataFrame: {type(market_data)}", "yellow")
@@ -1098,9 +1116,9 @@ FULL DATASET:
             vote_percentage = int((majority_count / total_votes) * 100)
 
             # Check minimum confidence threshold
-            if final_confidence < MIN_SWARM_CONFIDENCE and majority_action != "NOTHING":
+            if final_confidence < self.min_trade_confidence and majority_action != "NOTHING":
                 cprint(
-                    f"\n⚠️ LOW CONFIDENCE: {final_confidence}% < {MIN_SWARM_CONFIDENCE}% threshold",
+                    f"\n⚠️ LOW CONFIDENCE: {final_confidence}% < {self.min_trade_confidence}% threshold",
                     "yellow",
                     attrs=["bold"]
                 )
@@ -1114,7 +1132,7 @@ FULL DATASET:
                     count = vote_counts[action]
                     avg = avg_confidences[action]
                     reasoning += f"   {action}: {count} votes (avg {avg}% confidence)\n"
-                reasoning += f"\n⚠️ Confidence {final_confidence}% below {MIN_SWARM_CONFIDENCE}% threshold\n"
+                reasoning += f"\n⚠️ Confidence {final_confidence}% below {self.min_trade_confidence}% threshold\n"
                 reasoning += f"   Original: {majority_action} | Downgraded to: NOTHING\n\n"
                 reasoning += "Individual Votes:\n"
                 reasoning += "\n".join(f"   {vote}" for vote in model_votes)
@@ -1711,21 +1729,31 @@ Return ONLY valid JSON with the following structure:
 
         return "\n".join(lines), strategy_context
 
-    def _amplify_confidence(self, llm_action, llm_confidence, signal_bias, signal_confidence):
+    def _amplify_confidence(
+        self,
+        llm_action,
+        llm_confidence,
+        signal_bias,
+        signal_confidence,
+        signal_meta=None,
+    ):
         """
         Blend LLM confidence with strategy/engine signal confidence.
 
-        When the LLM and strategy agree, the signal boosts the LLM confidence.
-        When they disagree, the signal drags the confidence down.
+        - Super-recent signal: use engine_super_recent_weight (strong bias).
+        - Recent signal: use strategy_signal_weight (moderate bias).
+        - No signal / neutral / stale: dampen by engine_no_signal_dampen_factor.
         The LLM always keeps direction control; this only adjusts magnitude.
         """
-        if not signal_bias or signal_confidence is None:
-            return llm_confidence
+        signal_meta = signal_meta or {}
+
+        if not signal_bias or signal_bias in ("NOTHING", "NEUTRAL") or signal_confidence is None:
+            return int(min(100, max(0, llm_confidence * self.engine_no_signal_dampen_factor)))
 
         try:
             signal_confidence = float(signal_confidence)
         except Exception:
-            return llm_confidence
+            return int(min(100, max(0, llm_confidence * self.engine_no_signal_dampen_factor)))
 
         if not (0.0 <= signal_confidence <= 1.0):
             signal_confidence = min(max(signal_confidence / 100.0, 0.0), 1.0)
@@ -1733,20 +1761,20 @@ Return ONLY valid JSON with the following structure:
         llm_action = (llm_action or "NOTHING").upper().strip()
         signal_bias = (signal_bias or "NOTHING").upper().strip()
 
-        # Nothing signal provides no amplification
-        if signal_bias == "NOTHING" or signal_bias == "NEUTRAL":
-            return llm_confidence
-
-        # Map actions to normalized sides
         signal_side = "LONG" if signal_bias in ("BUY", "LONG") else "SHORT" if signal_bias in ("SELL", "SHORT") else "NEUTRAL"
         llm_side = "LONG" if llm_action in ("BUY", "LONG") else "SHORT" if llm_action in ("SELL", "SHORT") else "NEUTRAL"
 
-        # Weight: how much the signal influences the final confidence.
-        # Keep below 0.5 so the LLM remains the primary decision maker.
-        blend_weight = 0.35
+        if signal_side == "NEUTRAL":
+            return int(min(100, max(0, llm_confidence * self.engine_no_signal_dampen_factor)))
+
+        if signal_meta.get("is_super_recent"):
+            blend_weight = self.engine_super_recent_weight
+        elif signal_meta.get("is_recent"):
+            blend_weight = self.strategy_signal_weight
+        else:
+            blend_weight = 0.0
 
         if llm_side == "NEUTRAL":
-            # A strong signal can pull a NOTHING toward a modest directional confidence
             return int(min(100, max(0, llm_confidence + signal_confidence * 100 * blend_weight)))
 
         if llm_side == signal_side:
@@ -1778,6 +1806,124 @@ Return ONLY valid JSON with the following structure:
             except Exception as e:
                 cprint(f"⚠️ Engine v6.1 failed for {token}: {e}", "yellow")
         return signals
+
+    def _update_engine_signal_cache(self, engine_signals):
+        """Store current BUY/SELL engine signals with timestamps."""
+        now = datetime.utcnow()
+        for token, sig in engine_signals.items():
+            direction = sig.get("direction", "NEUTRAL")
+            if direction not in ("BUY", "SELL"):
+                continue
+            self.engine_signal_cache[token] = {
+                "direction": direction,
+                "confidence": float(sig.get("signal", 0) or 0),
+                "timestamp": now,
+                "metadata": sig.get("metadata", {}),
+            }
+
+    def _get_effective_engine_signal(self, token, current_signals=None):
+        """
+        Return effective engine signal considering recency.
+        Returns dict with direction, confidence, age_seconds, is_super_recent,
+        is_recent, source, metadata; or None if no usable signal.
+        """
+        now = datetime.utcnow()
+        if current_signals and token in current_signals:
+            sig = current_signals[token]
+            direction = sig.get("direction", "NEUTRAL")
+            if direction in ("BUY", "SELL"):
+                return {
+                    "direction": direction,
+                    "confidence": float(sig.get("signal", 0) or 0),
+                    "age_seconds": 0,
+                    "age_minutes": 0,
+                    "is_super_recent": True,
+                    "is_recent": True,
+                    "source": "current",
+                    "metadata": sig.get("metadata", {}),
+                }
+        if token not in self.engine_signal_cache:
+            return None
+        cached = self.engine_signal_cache[token]
+        age_seconds = (now - cached["timestamp"]).total_seconds()
+        age_minutes = age_seconds / 60.0
+        if age_minutes > self.engine_signal_recency_minutes:
+            return None
+        return {
+            "direction": cached["direction"],
+            "confidence": cached["confidence"],
+            "age_seconds": age_seconds,
+            "age_minutes": age_minutes,
+            "is_super_recent": age_seconds <= self.engine_super_recent_seconds,
+            "is_recent": True,
+            "source": "cached",
+            "metadata": cached["metadata"],
+        }
+
+    def _build_enriched_engine_context(self, token, effective_sig=None):
+        """Build StrategyAgent-shaped context from an effective engine signal."""
+        if not effective_sig:
+            return {
+                "token": token,
+                "strategies": [],
+                "aggregate": {
+                    "direction_bias": "NEUTRAL",
+                    "confidence": 0.0,
+                    "suggested_allocation_pct": 0.0,
+                    "conflict_level": "none",
+                    "notes": "No active engine signal",
+                },
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            }
+        metadata = effective_sig.get("metadata", {})
+        engine_confidence = float(effective_sig.get("confidence", 0) or 0)
+        direction = effective_sig.get("direction", "NEUTRAL")
+        recency = "super-recent" if effective_sig.get("is_super_recent") else "recent"
+        risk_notes = " | ".join(
+            f"{k}={metadata.get(k)}"
+            for k in ("adx", "fast_ema", "medm_ema", "slow_sma", "di_plus", "di_minus")
+            if metadata.get(k) is not None
+        )
+        return {
+            "token": token,
+            "strategies": [
+                {
+                    "name": self.active_strategy,
+                    "direction": direction,
+                    "confidence": engine_confidence,
+                    "suggested_allocation_pct": 0.0,
+                    "time_horizon": "short",
+                    "risk_notes": risk_notes or "technical engine signal",
+                }
+            ],
+            "aggregate": {
+                "direction_bias": direction,
+                "confidence": engine_confidence,
+                "suggested_allocation_pct": 0.0,
+                "conflict_level": "none",
+                "notes": f"Generated by {self.active_strategy} engine ({recency}, {effective_sig.get('age_seconds', 0):.0f}s ago)",
+            },
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
+
+    def _format_engine_signal_log(self, token, effective_sig):
+        """Format a concise per-token engine signal log line."""
+        if not effective_sig:
+            return f"{token} -> NEUTRAL | NO SIGNAL"
+        direction = effective_sig.get("direction", "NEUTRAL")
+        state = "ENTRY" if direction in ("BUY", "SELL") else "NO SIGNAL"
+        if effective_sig.get("is_super_recent"):
+            state += " | SUPER-RECENT"
+        elif effective_sig.get("is_recent"):
+            state += f" | {effective_sig.get('age_seconds', 0):.0f}s ago"
+        metadata = effective_sig.get("metadata", {})
+        parts = [
+            f"adx={metadata.get('adx')}",
+            f"fan={'up' if metadata.get('fan_up_trend') else ('down' if metadata.get('fan_dn_trend') else 'none')}",
+            f"pierce={'bull' if metadata.get('bull_pierce') else ('bear' if metadata.get('bear_pierce') else 'none')}",
+            f"pin={'bull' if metadata.get('bullish_pin_bar') else ('bear' if metadata.get('bearish_pin_bar') else 'none')}",
+        ]
+        return f"{token} -> {direction} | {state} | {' '.join(parts)}"
 
     def analyze_market_data(self, token, market_data, strategy_signals=None):
         """Analyze market data using AI model (single or swarm mode)."""
@@ -1928,7 +2074,7 @@ Return ONLY valid JSON with the following structure:
                         strategy_context=strategy_context_text,
                         position_context=position_context,
                     ),
-                    f"Market Data to Analyze:\n{market_data}",
+                    f"Market Data to Analyze:\n{market_data.tail(96) if isinstance(market_data, pd.DataFrame) else market_data}",
                 )
 
                 if not response:
@@ -1948,11 +2094,17 @@ Return ONLY valid JSON with the following structure:
 
                 # Amplify LLM confidence with injected strategy/engine signal
                 if strategy_signals:
+                    aggregate = strategy_signals.get("aggregate", {})
+                    signal_meta = {
+                        "is_super_recent": "super-recent" in (aggregate.get("notes") or ""),
+                        "is_recent": "recent" in (aggregate.get("notes") or "") or "super-recent" in (aggregate.get("notes") or ""),
+                    }
                     confidence = self._amplify_confidence(
                         llm_action=action,
                         llm_confidence=confidence,
-                        signal_bias=strategy_signals.get("aggregate", {}).get("direction_bias"),
-                        signal_confidence=strategy_signals.get("aggregate", {}).get("confidence", 0),
+                        signal_bias=aggregate.get("direction_bias"),
+                        signal_confidence=aggregate.get("confidence", 0),
+                        signal_meta=signal_meta,
                     )
 
                 reasoning = (
@@ -3035,80 +3187,56 @@ Return ONLY valid JSON with the following structure:
             # STEP 5: ANALYZE TOKENS FOR NEW ENTRIES
             cprint("\n📈 Analyzing tokens for new entry opportunities...", "white", "on_blue")
 
-            # Engine path: generate technical signals, then route them through the
-            # LLM analysis so the strategy signal AMPLIFIES the AI confidence (original
-            # pulse-graph-enhancements behavior). Falls back to raw engine execution
-            # when no AI model is available.
+            # Engine path: generate technical signals, then route ALL tokens through
+            # the LLM. Engine signal biases confidence based on recency.
             if self.active_strategy in ('engine_v6_1', 'engine_v1', 'engine_v1_3') and self.strategy_engine:
                 add_console_log(f"🚀 {self.active_strategy} generating technical signals", "info")
                 engine_signals = self._compute_engine_signals(market_data)
+                self._update_engine_signal_cache(engine_signals)
                 signal_count = sum(1 for s in engine_signals.values() if s["direction"] in ("BUY", "SELL"))
                 add_console_log(f"  {len(engine_signals)} tokens analyzed, {signal_count} signals generated", "info")
 
-                for token, sig in engine_signals.items():
+                for token in self.symbols:
+                    if token not in market_data:
+                        continue
                     if self.should_stop():
                         add_console_log(f"ℹ️ Stop signal received - stopping engine analysis at {token}", "warning")
                         return
 
-                    if sig["direction"] not in ("BUY", "SELL"):
-                        continue
+                    effective_sig = self._get_effective_engine_signal(token, current_signals=engine_signals)
+                    enriched_context = self._build_enriched_engine_context(token, effective_sig)
 
-                    # Build enriched context in the same shape StrategyAgent uses,
-                    # so the LLM prompt sees the engine signal as strategy intelligence.
-                    metadata = sig.get("metadata", {})
-                    engine_confidence = float(sig.get("signal", 0) or 0)
-                    risk_notes = " | ".join(
-                        f"{k}={metadata.get(k)}"
-                        for k in ("adx", "fast_ema", "medm_ema", "slow_sma", "di_plus", "di_minus")
-                        if metadata.get(k) is not None
-                    )
-                    enriched_context = {
-                        "token": token,
-                        "strategies": [
-                            {
-                                "name": self.active_strategy,
-                                "direction": sig["direction"],
-                                "confidence": engine_confidence,
-                                "suggested_allocation_pct": 0.0,
-                                "time_horizon": "short",
-                                "risk_notes": risk_notes or "technical engine signal",
-                            }
-                        ],
-                        "aggregate": {
-                            "direction_bias": sig["direction"],
-                            "confidence": engine_confidence,
-                            "suggested_allocation_pct": 0.0,
-                            "conflict_level": "none",
-                            "notes": f"Generated by {self.active_strategy} engine",
-                        },
-                        "timestamp": datetime.utcnow().isoformat() + "Z",
-                    }
+                    add_console_log(self._format_engine_signal_log(token, effective_sig), "info")
 
                     if self.model:
-                        add_console_log(f"  {token}: {sig['direction']} {int(engine_confidence * 100)}% — routing to LLM for confidence amplification", "info")
-                        data = market_data.get(token)
-                        if data is None:
-                            continue
-                        analysis = self.analyze_market_data(token, data, strategy_signals=enriched_context)
+                        add_console_log(f"  {token}: routing to LLM for signal-aware analysis", "info")
+                        analysis = self.analyze_market_data(token, market_data[token], strategy_signals=enriched_context)
                         if analysis:
                             print(f"\n📈 Engine + LLM analysis for {token}:")
                             print(analysis)
                             print("\n" + "=" * 50 + "\n")
                     else:
-                        # No AI model available — execute raw engine signal (engine strategies
-                        # are designed to work without AI).
-                        confidence = int(engine_confidence * 100)
-                        reasoning = f"{self.active_strategy} | {risk_notes}"
-                        self.recommendations_df = pd.concat([
-                            self.recommendations_df,
-                            pd.DataFrame([{
-                                "token": token,
-                                "action": sig["direction"],
-                                "confidence": confidence,
-                                "reasoning": reasoning,
-                            }]),
-                        ], ignore_index=True)
-                        add_console_log(f"  {token}: {sig['direction']} {confidence}% (no AI model — executing on engine signal)", "success")
+                        # No AI model available — execute raw engine signal
+                        if effective_sig and effective_sig["direction"] in ("BUY", "SELL"):
+                            confidence = int(effective_sig["confidence"] * 100)
+                            metadata = effective_sig.get("metadata", {})
+                            risk_notes = " | ".join(
+                                f"{k}={metadata.get(k)}"
+                                for k in ("adx", "fast_ema", "medm_ema", "slow_sma", "di_plus", "di_minus")
+                                if metadata.get(k) is not None
+                            )
+                            self.recommendations_df = pd.concat([
+                                self.recommendations_df,
+                                pd.DataFrame([{
+                                    "token": token,
+                                    "action": effective_sig["direction"],
+                                    "confidence": confidence,
+                                    "reasoning": f"{self.active_strategy} | {risk_notes}",
+                                }]),
+                            ], ignore_index=True)
+                            add_console_log(f"  {token}: {effective_sig['direction']} {confidence}% (no AI model — executing on engine signal)", "success")
+                        else:
+                            add_console_log(f"  {token}: no signal, no AI model — skipping", "info")
             else:
                 for token, data in market_data.items():
                     if self.should_stop():
